@@ -34,7 +34,8 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 ## Phase 4: Model backends
 
 - OpenAI-compatible endpoints (Ollama, llama.cpp server, LM Studio, vLLM), local or on the network
-- Gemini through a Google AI Studio API key
+- Gemini through a Google AI Studio API key, including keys billed to the monthly Google Cloud credits of a Google AI Pro/Ultra plan
+- Usage tracking, budgets and warnings for billed keys
 - Endpoint and key management (OS secure storage), model discovery
 - Chat sessions with model backends
 
