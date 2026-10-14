@@ -1,17 +1,24 @@
 appId: io.github.behindyb.powerchord
 productName: PowerChord
+copyright: Copyright (c) 2026 BehindYB and PowerChord contributors
 directories:
   output: release
   buildResources: resources
 files:
   - out/**/*
+  - resources/icon.png
   - package.json
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 win:
   target: nsis
 nsis:
   oneClick: false
   perMachine: false
+  allowToChangeInstallationDirectory: true
 mac:
   target: dmg
+  category: public.app-category.developer-tools
 linux:
   target: AppImage
+  category: Development
+publish: null

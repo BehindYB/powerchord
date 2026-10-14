@@ -5,6 +5,7 @@
 import type {
   PermissionBehavior,
   PermissionMode,
+  QuestionAnswers,
   SessionEvent,
   SessionState,
   SessionStatus,
@@ -19,13 +20,15 @@ export const IpcChannel = {
   OpenAgentSignIn: 'agents:open-sign-in',
   ChooseWorkingDirectory: 'sessions:choose-directory',
   ListSessions: 'sessions:list',
+  SearchSessions: 'sessions:search',
   CreateSession: 'sessions:create',
   GetSession: 'sessions:get',
   SendMessage: 'sessions:send',
   InterruptSession: 'sessions:interrupt',
   RespondToPermission: 'sessions:respond-permission',
+  AnswerQuestion: 'sessions:answer-question',
   UpdateSessionSettings: 'sessions:update-settings',
-  CloseSession: 'sessions:close',
+  DeleteSession: 'sessions:delete',
   OpenSessionIn: 'sessions:open-in',
   SessionEvent: 'sessions:event',
   SessionsChanged: 'sessions:changed',
@@ -44,6 +47,11 @@ export const IpcChannel = {
   SetHubDefaultModel: 'hub:set-default-model',
   RegisterHub: 'hub:register',
   CopyHubConfig: 'hub:copy-config',
+  GetPreferences: 'preferences:get',
+  SetTheme: 'preferences:set-theme',
+  RemoveTrustedFolder: 'preferences:remove-trusted-folder',
+  OpenDataFolder: 'preferences:open-data-folder',
+  RegenerateHubToken: 'preferences:regenerate-hub-token',
 } as const;
 
 export interface AppInfo {
@@ -127,6 +135,8 @@ export interface SessionSummary {
   /** Null for agents without permission modes. */
   permissionMode: PermissionMode | null;
   createdAt: number;
+  /** Time of the last message, used to order the session list. */
+  lastActiveAt: number;
 }
 
 export interface SessionSnapshot {
@@ -192,6 +202,15 @@ export type HubRegistrationTarget = 'antigravity-cli' | 'claude-code';
 export type HubRegistrationOutcome =
   { status: 'registered' } | { status: 'cancelled' } | { status: 'failed'; message: string };
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+export interface Preferences {
+  theme: ThemePreference;
+  trustedFolders: string[];
+  /** Where PowerChord keeps settings, session history and the hub. */
+  dataFolder: string;
+}
+
 /** API exposed to the renderer as `window.powerchord` by the preload script. */
 export interface PowerChordApi {
   getAppInfo(): Promise<AppInfo>;
@@ -205,7 +224,10 @@ export interface PowerChordApi {
 
   /** Shows a folder picker and asks the user to trust the folder if needed. Null if cancelled. */
   chooseWorkingDirectory(): Promise<string | null>;
+  /** Saved and active sessions, most recently used first. */
   listSessions(): Promise<SessionSummary[]>;
+  /** Ids of the sessions whose title or transcript contains the query. */
+  searchSessions(query: string): Promise<string[]>;
   createSession(request: CreateSessionRequest): Promise<SessionSummary>;
   getSession(sessionId: string): Promise<SessionSnapshot | null>;
   sendMessage(sessionId: string, text: string): Promise<void>;
@@ -216,11 +238,13 @@ export interface PowerChordApi {
     behavior: PermissionBehavior,
     scope: 'once' | 'session',
   ): Promise<void>;
+  answerQuestion(sessionId: string, requestId: string, answers: QuestionAnswers): Promise<void>;
   updateSessionSettings(
     sessionId: string,
     settings: { model?: string | null; permissionMode?: PermissionMode },
   ): Promise<void>;
-  closeSession(sessionId: string): Promise<void>;
+  /** Asks for confirmation, then stops the session and removes it from the history. */
+  deleteSession(sessionId: string): Promise<boolean>;
   openSessionIn(sessionId: string, target: OpenTarget): Promise<void>;
   onSessionEvent(listener: (message: SessionEventMessage) => void): () => void;
   onSessionsChanged(listener: (sessions: SessionSummary[]) => void): () => void;
@@ -249,4 +273,11 @@ export interface PowerChordApi {
   registerHub(target: HubRegistrationTarget): Promise<HubRegistrationOutcome>;
   /** Copies an MCP configuration snippet, including the hub token, to the clipboard. */
   copyHubConfig(): Promise<void>;
+
+  getPreferences(): Promise<Preferences>;
+  setTheme(theme: ThemePreference): Promise<void>;
+  removeTrustedFolder(folder: string): Promise<void>;
+  openDataFolder(): Promise<void>;
+  /** Confirms in a native dialog; false if the user cancelled. */
+  regenerateHubToken(): Promise<boolean>;
 }

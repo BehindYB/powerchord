@@ -25,6 +25,7 @@ const api: PowerChordApi = {
 
   chooseWorkingDirectory: () => ipcRenderer.invoke(IpcChannel.ChooseWorkingDirectory),
   listSessions: () => ipcRenderer.invoke(IpcChannel.ListSessions),
+  searchSessions: (query) => ipcRenderer.invoke(IpcChannel.SearchSessions, query),
   createSession: (request) => ipcRenderer.invoke(IpcChannel.CreateSession, request),
   getSession: (sessionId) => ipcRenderer.invoke(IpcChannel.GetSession, sessionId),
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IpcChannel.SendMessage, sessionId, text),
@@ -33,7 +34,9 @@ const api: PowerChordApi = {
     ipcRenderer.invoke(IpcChannel.RespondToPermission, sessionId, requestId, behavior, scope),
   updateSessionSettings: (sessionId, settings) =>
     ipcRenderer.invoke(IpcChannel.UpdateSessionSettings, sessionId, settings),
-  closeSession: (sessionId) => ipcRenderer.invoke(IpcChannel.CloseSession, sessionId),
+  answerQuestion: (sessionId, requestId, answers) =>
+    ipcRenderer.invoke(IpcChannel.AnswerQuestion, sessionId, requestId, answers),
+  deleteSession: (sessionId) => ipcRenderer.invoke(IpcChannel.DeleteSession, sessionId),
   openSessionIn: (sessionId, target) =>
     ipcRenderer.invoke(IpcChannel.OpenSessionIn, sessionId, target),
   onSessionEvent: (listener) => subscribe<SessionEventMessage>(IpcChannel.SessionEvent, listener),
@@ -60,6 +63,11 @@ const api: PowerChordApi = {
   setHubDefaultModel: (model) => ipcRenderer.invoke(IpcChannel.SetHubDefaultModel, model),
   registerHub: (target) => ipcRenderer.invoke(IpcChannel.RegisterHub, target),
   copyHubConfig: () => ipcRenderer.invoke(IpcChannel.CopyHubConfig),
+  getPreferences: () => ipcRenderer.invoke(IpcChannel.GetPreferences),
+  setTheme: (theme) => ipcRenderer.invoke(IpcChannel.SetTheme, theme),
+  removeTrustedFolder: (folder) => ipcRenderer.invoke(IpcChannel.RemoveTrustedFolder, folder),
+  openDataFolder: () => ipcRenderer.invoke(IpcChannel.OpenDataFolder),
+  regenerateHubToken: () => ipcRenderer.invoke(IpcChannel.RegenerateHubToken),
 };
 
 contextBridge.exposeInMainWorld('powerchord', api);

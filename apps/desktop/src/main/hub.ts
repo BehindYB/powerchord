@@ -9,6 +9,7 @@ import {
   resolveSearchPath,
   runCommand,
   TASK_STATUSES,
+  type McpClientRegistration,
   type McpServerStartResult,
   type PowerChordMcpServer,
   type TaskStatus,
@@ -25,6 +26,7 @@ import { findEndpoint } from './models';
 import {
   getHubSettings,
   getModelEndpoints,
+  regenerateHubToken,
   setHubDefaultModel,
   type HubSettings,
 } from './settings';
@@ -55,6 +57,7 @@ export class HubManager {
   private readonly mcp: PowerChordMcpServer;
   private settings: HubSettings | null = null;
   private connection: HubConnection | null = null;
+  private externalClient: McpClientRegistration | null = null;
 
   constructor(mcp: PowerChordMcpServer) {
     this.mcp = mcp;
@@ -87,9 +90,21 @@ export class HubManager {
       }),
     });
     // Agents the user registered the hub in authenticate with the persistent token.
-    this.mcp.register({ label: EXTERNAL_CLIENT_LABEL, hub: true }, settings.token);
+    this.externalClient = this.mcp.register(
+      { label: EXTERNAL_CLIENT_LABEL, hub: true },
+      settings.token,
+    );
     this.store.onChange((snapshot) => broadcast(IpcChannel.HubChanged, snapshot));
     this.registerHandlers();
+  }
+
+  /** Issues a new token for external agents and revokes the old one. */
+  async regenerateToken(): Promise<void> {
+    this.requireReady();
+    const hub = await regenerateHubToken();
+    this.externalClient?.dispose();
+    this.externalClient = this.mcp.register({ label: EXTERNAL_CLIENT_LABEL, hub: true }, hub.token);
+    this.settings = hub;
   }
 
   private requireReady(): { settings: HubSettings; connection: HubConnection } {

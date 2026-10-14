@@ -5,18 +5,49 @@ import {
   type ChatUsage,
   type ModelEndpoint,
 } from '../../models/openai-compatible.ts';
-import type { SessionEvent, SessionStatus } from '../types.ts';
+import type { SessionEvent, SessionStatus, TranscriptItem } from '../types.ts';
 
 export interface ModelChatSessionOptions {
   endpoint: ModelEndpoint;
   model: string;
   systemPrompt?: string;
   onEvent: (event: SessionEvent) => void;
+  /** Earlier conversation, for example restored from a saved transcript. */
+  history?: ChatMessage[];
+  /** Identifier of a restored conversation. */
+  agentSessionId?: string;
+}
+
+/**
+ * Rebuilds the chat history from a transcript. Messages without an answer are left out, matching
+ * what a live session keeps after a failed or interrupted request.
+ */
+export function chatHistoryFromTranscript(items: readonly TranscriptItem[]): ChatMessage[] {
+  const history: ChatMessage[] = [];
+  let question: string | null = null;
+  let answer = '';
+  const flush = () => {
+    if (question !== null && answer) {
+      history.push({ role: 'user', content: question }, { role: 'assistant', content: answer });
+    }
+    question = null;
+    answer = '';
+  };
+  for (const item of items) {
+    if (item.kind === 'user') {
+      flush();
+      question = item.text;
+    } else if (item.kind === 'text' && question !== null) {
+      answer += item.text;
+    }
+  }
+  flush();
+  return history;
 }
 
 /** A chat session with a model served by an OpenAI-compatible endpoint. */
 export class ModelChatSession {
-  readonly agentSessionId = randomUUID();
+  readonly agentSessionId: string;
   private readonly options: ModelChatSessionOptions;
   private readonly history: ChatMessage[] = [];
   private model: string;
@@ -26,8 +57,10 @@ export class ModelChatSession {
 
   constructor(options: ModelChatSessionOptions) {
     this.options = options;
+    this.agentSessionId = options.agentSessionId ?? randomUUID();
     this.model = options.model;
     if (options.systemPrompt) this.history.push({ role: 'system', content: options.systemPrompt });
+    if (options.history) this.history.push(...options.history);
     // Deferred so the owner can finish registering the session before the first event.
     queueMicrotask(() =>
       this.emit({

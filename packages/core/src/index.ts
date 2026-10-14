@@ -29,8 +29,10 @@ export {
 export { findExecutable, resolveSearchPath } from './system/search-path.ts';
 export { openInTerminal, type TerminalLaunchOptions } from './system/terminal.ts';
 export type {
+  AgentQuestion,
   PermissionBehavior,
   PermissionMode,
+  QuestionAnswers,
   SessionEvent,
   SessionState,
   SessionStatus,
@@ -39,8 +41,8 @@ export type {
   UsageLimits,
   UsageWindow,
 } from './sessions/types.ts';
-export { createSessionState } from './sessions/types.ts';
-export { applySessionEvent } from './sessions/transcript.ts';
+export { createSessionState, parseAgentQuestions, QUESTION_TOOL_NAME } from './sessions/types.ts';
+export { applySessionEvent, settleSessionState } from './sessions/transcript.ts';
 export { ClaudeStreamParser } from './sessions/claude-code/parser.ts';
 export {
   ClaudeCodeSession,
@@ -54,7 +56,11 @@ export {
   type PermissionDecision,
   type PermissionRequest,
 } from './mcp/server.ts';
-export { ModelChatSession, type ModelChatSessionOptions } from './sessions/model-chat/session.ts';
+export {
+  chatHistoryFromTranscript,
+  ModelChatSession,
+  type ModelChatSessionOptions,
+} from './sessions/model-chat/session.ts';
 export {
   listModels,
   normalizeBaseUrl,

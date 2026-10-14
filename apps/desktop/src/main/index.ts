@@ -5,6 +5,7 @@ import { IpcChannel, type AppInfo } from '../shared/ipc';
 import { registerAgentHandlers } from './agents';
 import { HubManager } from './hub';
 import { registerModelHandlers } from './models';
+import { applySavedTheme, registerPreferenceHandlers } from './preferences';
 import { SessionManager } from './sessions';
 
 const APP_USER_MODEL_ID = 'io.github.behindyb.powerchord';
@@ -48,6 +49,8 @@ function createMainWindow(): BrowserWindow {
     title: 'PowerChord',
     backgroundColor: BACKGROUND[currentTheme()],
     titleBarStyle: 'hidden',
+    // Windows and macOS take the icon from the application bundle.
+    ...(process.platform === 'linux' ? { icon: join(app.getAppPath(), 'resources/icon.png') } : {}),
     ...(usesOverlay ? { titleBarOverlay: titleBarOverlay() } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -90,6 +93,7 @@ function registerIpcHandlers(): void {
   }));
   registerAgentHandlers();
   registerModelHandlers();
+  registerPreferenceHandlers(hub);
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -105,8 +109,9 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(async () => {
     app.setAppUserModelId(APP_USER_MODEL_ID);
     registerIpcHandlers();
+    await applySavedTheme();
     await hub.start();
-    sessions.start();
+    await sessions.start();
     createMainWindow();
 
     app.on('activate', () => {
@@ -120,8 +125,10 @@ if (!app.requestSingleInstanceLock()) {
     if (stopping) return;
     stopping = true;
     event.preventDefault();
-    sessions.stop();
-    void mcp.stop().finally(() => app.quit());
+    void sessions
+      .stop()
+      .then(() => mcp.stop())
+      .finally(() => app.quit());
   });
 
   app.on('window-all-closed', () => {

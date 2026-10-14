@@ -2,7 +2,7 @@
 
 A desktop workspace for AI coding agents and models. Run **Claude Code**, **OpenAI Codex**, **Gemini** and **local models** from a single interface, using the subscriptions and tools you already have.
 
-> **Status: pre-alpha.** Agent setup, Claude Code sessions (streaming, tool calls, permission prompts, plan usage) local model chats with network discovery, and a shared MCP hub (tasks, notes, and delegation from agents to local models) work. Codex and Gemini are next. See the [roadmap](docs/ROADMAP.md).
+> **Status: pre-alpha.** Agent setup, Claude Code sessions (streaming, tool calls, permission prompts, questions, plan usage), local model chats with network discovery, a shared MCP hub (tasks, notes, and delegation from agents to local models), saved session history with resume, and side-by-side sessions work. See the [roadmap](docs/ROADMAP.md).
 
 ## How it works
 
@@ -42,6 +42,8 @@ npm run dev
 | `npm run format`           | Format the repository with Prettier                   |
 | `npm test`                 | Run the test suite                                    |
 | `npm run cli -- <command>` | Run the `powerchord` CLI (`doctor`, `setup`, `login`) |
+
+To build an installer for the current platform, run `npm run package --workspace @powerchord/desktop`; the output is written to `apps/desktop/release`. Pushing a `v*` tag builds unsigned installers for Windows, macOS and Linux and attaches them to a draft GitHub release.
 
 ## Disclaimer
 

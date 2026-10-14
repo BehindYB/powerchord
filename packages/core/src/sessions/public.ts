@@ -1,6 +1,8 @@
 /** Browser-safe entry point: session types and the transcript reducer, without Node.js APIs. */
 export type {
+  AgentQuestion,
   PermissionBehavior,
+  QuestionAnswers,
   PermissionMode,
   SessionEvent,
   SessionState,
@@ -10,5 +12,5 @@ export type {
   UsageLimits,
   UsageWindow,
 } from './types.ts';
-export { createSessionState } from './types.ts';
-export { applySessionEvent } from './transcript.ts';
+export { createSessionState, parseAgentQuestions, QUESTION_TOOL_NAME } from './types.ts';
+export { applySessionEvent, settleSessionState } from './transcript.ts';

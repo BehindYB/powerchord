@@ -1,4 +1,9 @@
-import type { PermissionBehavior, PermissionMode, UsageLimits } from '@powerchord/core/sessions';
+import type {
+  PermissionBehavior,
+  PermissionMode,
+  QuestionAnswers,
+  UsageLimits,
+} from '@powerchord/core/sessions';
 import { useEffect, useRef, useState } from 'react';
 import { CLAUDE_MODELS, PERMISSION_MODES, type SessionSummary } from '../../../shared/ipc';
 import { useModelEndpoints } from '../hooks/useModelEndpoints';
@@ -17,7 +22,10 @@ function UsagePill({ limits }: { limits: UsageLimits }) {
     ? `5-hour window resets at ${new Date(limits.fiveHour.resetsAt * 1000).toLocaleTimeString()}`
     : undefined;
   return (
-    <span title={resets} className="rounded-full bg-hover px-2 py-0.5 text-xs text-muted">
+    <span
+      title={resets}
+      className="rounded-full bg-hover px-2 py-0.5 text-xs whitespace-nowrap text-muted"
+    >
       Plan usage {text}
     </span>
   );
@@ -25,10 +33,18 @@ function UsagePill({ limits }: { limits: UsageLimits }) {
 
 export function SessionView({
   summary,
-  onClosed,
+  focused,
+  onFocus,
+  onClosePane,
+  onDeleted,
 }: {
   summary: SessionSummary;
-  onClosed: () => void;
+  /** Whether this pane receives sidebar navigation; only shown when several panes are open. */
+  focused: boolean | null;
+  onFocus: () => void;
+  /** Present when the session is shown next to others. */
+  onClosePane: (() => void) | null;
+  onDeleted: () => void;
 }) {
   const state = useSessionState(summary.id);
   const { endpoints } = useModelEndpoints();
@@ -50,6 +66,17 @@ export function SessionView({
     if (element && pinnedToBottom.current) element.scrollTop = element.scrollHeight;
   }, [state?.items]);
 
+  // Layout changes, such as opening a pane next to this one, keep a pinned transcript at the end.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      if (pinnedToBottom.current) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const run = (action: Promise<unknown>) =>
     action.then(
       () => setError(null),
@@ -58,10 +85,20 @@ export function SessionView({
 
   const respond = (requestId: string, behavior: PermissionBehavior, scope: 'once' | 'session') =>
     void run(window.powerchord.respondToPermission(summary.id, requestId, behavior, scope));
+  const answer = (requestId: string, answers: QuestionAnswers) =>
+    void run(window.powerchord.answerQuestion(summary.id, requestId, answers));
+  const padding = onClosePane ? 'px-4' : 'px-6';
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border px-6 pb-3">
+    <section
+      onMouseDown={onFocus}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col ${
+        focused === null ? '' : `border-t-2 ${focused ? 'border-accent' : 'border-transparent'}`
+      }`}
+    >
+      <div
+        className={`flex flex-wrap items-center gap-3 border-b border-border ${padding} ${onClosePane ? 'py-3' : 'pb-3'}`}
+      >
         <div className="min-w-0">
           <h1 className="truncate text-base font-semibold">{summary.title}</h1>
           <p className="truncate text-xs text-muted" title={summary.cwd ?? undefined}>
@@ -70,21 +107,21 @@ export function SessionView({
               .join(' · ')}
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {state?.usageLimits && <UsagePill limits={state.usageLimits} />}
           {summary.cwd !== null && (
             <>
               <button
                 type="button"
                 onClick={() => void run(window.powerchord.openSessionIn(summary.id, 'explorer'))}
-                className="rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-hover"
+                className="rounded-lg border border-border px-2.5 py-1 text-xs whitespace-nowrap hover:bg-hover"
               >
                 Open folder
               </button>
               <button
                 type="button"
                 onClick={() => void run(window.powerchord.openSessionIn(summary.id, 'antigravity'))}
-                className="rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-hover"
+                className="rounded-lg border border-border px-2.5 py-1 text-xs whitespace-nowrap hover:bg-hover"
               >
                 Open in Antigravity
               </button>
@@ -92,11 +129,28 @@ export function SessionView({
           )}
           <button
             type="button"
-            onClick={() => void run(window.powerchord.closeSession(summary.id).then(onClosed))}
-            className="rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-hover"
+            onClick={() =>
+              void run(
+                window.powerchord.deleteSession(summary.id).then((deleted) => {
+                  if (deleted) onDeleted();
+                }),
+              )
+            }
+            className="rounded-lg border border-border px-2.5 py-1 text-xs whitespace-nowrap hover:bg-hover"
           >
-            Close
+            Delete
           </button>
+          {onClosePane && (
+            <button
+              type="button"
+              onClick={onClosePane}
+              aria-label="Close pane"
+              title="Close pane"
+              className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-hover hover:text-text"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
@@ -107,11 +161,11 @@ export function SessionView({
           pinnedToBottom.current =
             element.scrollHeight - element.scrollTop - element.clientHeight < 80;
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
+        className={`min-h-0 flex-1 overflow-y-auto ${padding} py-6`}
       >
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
           {state?.items.map((item) => (
-            <TranscriptItemView key={item.id} item={item} onRespond={respond} />
+            <TranscriptItemView key={item.id} item={item} onRespond={respond} onAnswer={answer} />
           ))}
           {state?.status === 'starting' && (
             <p className="text-xs text-muted">Starting {agentLabel}…</p>
@@ -119,7 +173,7 @@ export function SessionView({
         </div>
       </div>
 
-      <div className="px-6 pb-6">
+      <div className={`${padding} pb-6`}>
         <div className="mx-auto max-w-3xl">
           {error && <p className="mb-2 text-sm text-red-500">{error}</p>}
           <Composer

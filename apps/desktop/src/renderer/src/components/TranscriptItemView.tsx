@@ -1,4 +1,10 @@
-import type { PermissionBehavior, TranscriptItem } from '@powerchord/core/sessions';
+import {
+  parseAgentQuestions,
+  QUESTION_TOOL_NAME,
+  type PermissionBehavior,
+  type QuestionAnswers,
+  type TranscriptItem,
+} from '@powerchord/core/sessions';
 import { useState } from 'react';
 import { Markdown } from './Markdown';
 
@@ -148,6 +154,132 @@ function PermissionView({
   );
 }
 
+/** Multiple-choice questions from Claude Code's AskUserQuestion tool. */
+function QuestionView({
+  item,
+  onAnswer,
+  onSkip,
+}: {
+  item: Extract<TranscriptItem, { kind: 'permission' }>;
+  onAnswer: (answers: QuestionAnswers) => void;
+  onSkip: () => void;
+}) {
+  const questions = parseAgentQuestions(item.input);
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [other, setOther] = useState<Record<string, string>>({});
+  const pending = item.status === 'pending';
+
+  const answerFor = (question: string): string => {
+    const custom = other[question]?.trim();
+    return [...(selected[question] ?? []), ...(custom ? [custom] : [])].join(', ');
+  };
+  const complete = questions.every((entry) => answerFor(entry.question).length > 0);
+
+  const toggle = (question: string, label: string, multiSelect: boolean) => {
+    const current = selected[question] ?? [];
+    const next = multiSelect
+      ? current.includes(label)
+        ? current.filter((entry) => entry !== label)
+        : [...current, label]
+      : [label];
+    setSelected({ ...selected, [question]: next });
+    if (!multiSelect) setOther({ ...other, [question]: '' });
+  };
+
+  return (
+    <div
+      className={`rounded-xl border p-4 text-sm ${
+        pending ? 'border-accent bg-accent/5' : 'border-border bg-elevated'
+      }`}
+    >
+      <p className="font-medium">Claude has {questions.length > 1 ? 'questions' : 'a question'}</p>
+      <div className="mt-3 flex flex-col gap-4">
+        {questions.map((entry) => (
+          <fieldset key={entry.question} disabled={!pending}>
+            <legend className="mb-2">
+              {entry.header && (
+                <span className="mr-2 rounded bg-hover px-1.5 py-0.5 text-xs text-muted">
+                  {entry.header}
+                </span>
+              )}
+              {entry.question}
+            </legend>
+            {pending ? (
+              <div className="flex flex-col gap-1.5">
+                {entry.options.map((option) => {
+                  const checked = (selected[entry.question] ?? []).includes(option.label);
+                  return (
+                    <label
+                      key={option.label}
+                      className={`flex cursor-pointer gap-2 rounded-lg border px-3 py-2 ${
+                        checked ? 'border-accent' : 'border-border hover:bg-hover'
+                      }`}
+                    >
+                      <input
+                        type={entry.multiSelect ? 'checkbox' : 'radio'}
+                        name={`${item.id}:${entry.question}`}
+                        checked={checked}
+                        onChange={() => toggle(entry.question, option.label, entry.multiSelect)}
+                        className="mt-0.5 accent-[var(--pc-accent)]"
+                      />
+                      <span>
+                        <span className="font-medium">{option.label}</span>
+                        {option.description && (
+                          <span className="block text-xs text-muted">{option.description}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+                <input
+                  value={other[entry.question] ?? ''}
+                  onChange={(event) => {
+                    setOther({ ...other, [entry.question]: event.target.value });
+                    if (!entry.multiSelect && event.target.value) {
+                      setSelected({ ...selected, [entry.question]: [] });
+                    }
+                  }}
+                  placeholder="Other answer"
+                  className="rounded-lg border border-border bg-elevated px-3 py-1.5 select-text"
+                />
+              </div>
+            ) : (
+              <p className="text-muted">
+                {item.answers?.[entry.question] ?? (item.status === 'deny' ? 'Skipped' : '')}
+              </p>
+            )}
+          </fieldset>
+        ))}
+      </div>
+      {pending && (
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            disabled={!complete}
+            onClick={() =>
+              onAnswer(
+                Object.fromEntries(
+                  questions.map((entry) => [entry.question, answerFor(entry.question)]),
+                ),
+              )
+            }
+            className="rounded-lg bg-accent px-3 py-1.5 font-medium text-accent-contrast disabled:opacity-50"
+          >
+            Answer
+          </button>
+          <button
+            type="button"
+            onClick={onSkip}
+            className="rounded-lg border border-border px-3 py-1.5 hover:bg-hover"
+          >
+            Skip
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatDuration(ms: number): string {
   return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 60_000)} min`;
 }
@@ -155,9 +287,11 @@ function formatDuration(ms: number): string {
 export function TranscriptItemView({
   item,
   onRespond,
+  onAnswer,
 }: {
   item: TranscriptItem;
   onRespond: (requestId: string, behavior: PermissionBehavior, scope: 'once' | 'session') => void;
+  onAnswer: (requestId: string, answers: QuestionAnswers) => void;
 }) {
   switch (item.kind) {
     case 'user':
@@ -186,8 +320,18 @@ export function TranscriptItemView({
         </details>
       );
     case 'tool-call':
-      return <ToolCallView item={item} />;
+      // Questions appear as their own card.
+      return item.name === QUESTION_TOOL_NAME ? null : <ToolCallView item={item} />;
     case 'permission':
+      if (item.toolName === QUESTION_TOOL_NAME) {
+        return (
+          <QuestionView
+            item={item}
+            onAnswer={(answers) => onAnswer(item.id, answers)}
+            onSkip={() => onRespond(item.id, 'deny', 'once')}
+          />
+        );
+      }
       return (
         <PermissionView
           item={item}

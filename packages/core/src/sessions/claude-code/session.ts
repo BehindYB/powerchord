@@ -9,7 +9,14 @@ import {
   type PermissionRequest,
   type PowerChordMcpServer,
 } from '../../mcp/server.ts';
-import type { PermissionBehavior, PermissionMode, SessionEvent, SessionStatus } from '../types.ts';
+import {
+  QUESTION_TOOL_NAME,
+  type PermissionBehavior,
+  type PermissionMode,
+  type QuestionAnswers,
+  type SessionEvent,
+  type SessionStatus,
+} from '../types.ts';
 import { ClaudeStreamParser } from './parser.ts';
 
 /*
@@ -18,8 +25,6 @@ import { ClaudeStreamParser } from './parser.ts';
  * authentication; PowerChord never handles Claude credentials.
  */
 
-/** Tools that need a dedicated user interface PowerChord does not provide yet. */
-const DISALLOWED_TOOLS = ['AskUserQuestion'];
 const STDERR_TAIL_BYTES = 4000;
 
 export interface ClaudeCodeSessionOptions {
@@ -42,6 +47,7 @@ export type PermissionScope = 'once' | 'session';
 
 interface PendingPermission {
   toolName: string;
+  input: Record<string, unknown>;
   resolve: (decision: PermissionDecision) => void;
 }
 
@@ -102,12 +108,22 @@ export class ClaudeCodeSession {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return;
     this.pendingPermissions.delete(requestId);
-    if (behavior === 'allow' && scope === 'session')
+    if (behavior === 'allow' && scope === 'session' && pending.toolName !== QUESTION_TOOL_NAME)
       this.toolsAllowedForSession.add(pending.toolName);
     pending.resolve(
       behavior === 'allow' ? { behavior } : { behavior, message: 'The user denied this action.' },
     );
     this.emit({ type: 'permission-resolved', requestId, behavior });
+  }
+
+  /** Answers a question the agent asked with AskUserQuestion. */
+  answerQuestion(requestId: string, answers: QuestionAnswers): void {
+    const pending = this.pendingPermissions.get(requestId);
+    if (!pending || pending.toolName !== QUESTION_TOOL_NAME) return;
+    this.pendingPermissions.delete(requestId);
+    // The tool reads the answers from its input (https://code.claude.com/docs/en/agent-sdk/user-input).
+    pending.resolve({ behavior: 'allow', updatedInput: { ...pending.input, answers } });
+    this.emit({ type: 'permission-resolved', requestId, behavior: 'allow', answers });
   }
 
   /** Stops the current turn. The conversation continues with the next message. */
@@ -177,8 +193,6 @@ export class ClaudeCodeSession {
       JSON.stringify(mcpConfig),
       '--permission-prompt-tool',
       `mcp__${MCP_SERVER_NAME}__${PERMISSION_TOOL_NAME}`,
-      '--disallowedTools',
-      ...DISALLOWED_TOOLS,
       ...(this.model ? ['--model', this.model] : []),
     ];
   }
@@ -271,12 +285,19 @@ export class ClaudeCodeSession {
   }
 
   private requestPermission(request: PermissionRequest): Promise<PermissionDecision> {
-    if (this.toolsAllowedForSession.has(request.toolName)) {
+    if (
+      request.toolName !== QUESTION_TOOL_NAME &&
+      this.toolsAllowedForSession.has(request.toolName)
+    ) {
       return Promise.resolve({ behavior: 'allow' });
     }
     const requestId = randomUUID();
     return new Promise((resolve) => {
-      this.pendingPermissions.set(requestId, { toolName: request.toolName, resolve });
+      this.pendingPermissions.set(requestId, {
+        toolName: request.toolName,
+        input: request.input,
+        resolve,
+      });
       this.emit({
         type: 'permission-request',
         requestId,

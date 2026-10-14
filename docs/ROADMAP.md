@@ -17,7 +17,7 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - `powerchord` command-line tool exposing the same setup flow (`powerchord setup`, `powerchord doctor`)
 - Agents screen in the desktop app
 
-## Phase 2: Sessions with Claude Code (done, except split view)
+## Phase 2: Sessions with Claude Code (done)
 
 - Agent process management in the main process
 - Unified event model: message streaming, reasoning, tool calls, permission requests, plans, usage
@@ -50,13 +50,14 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Evaluate joining OpenAI's "Sign in with ChatGPT" program
 - Evaluate running Claude Code against local models through an LLM gateway
 
-## Phase 6: Persistence and polish
+## Phase 6: Persistence and polish (done, except auto-update)
 
-- Session history stored locally (SQLite) with search, and resuming Claude Code sessions after a restart
-- Split view to follow several sessions side by side
+- Session history stored locally (one JSON file per session) with search; Claude Code sessions resume their conversation after a restart, local model chats continue with their saved history
+- Split view to follow up to three sessions side by side
 - Interactive questions from agents (Claude Code's AskUserQuestion)
-- Settings, keyboard shortcuts, theming
-- Packaging and auto-update for Windows, then macOS and Linux
+- Settings (theme, trusted folders, hub token, data folder) and keyboard shortcuts
+- Packaging with electron-builder and a release workflow that builds Windows, macOS and Linux installers
+- Remaining: auto-update and code signing, once releases are public
 
 ## Phase 7: Pay-as-you-go APIs
 

@@ -1,0 +1,39 @@
+name: Release
+
+# Builds installers for a version tag (for example v0.1.0) and attaches them to a draft release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Builds are unsigned until signing certificates are configured.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run package --workspace @powerchord/desktop
+      - name: Upload installers
+        shell: bash
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --draft --title "PowerChord $GITHUB_REF_NAME" --notes "" ||
+            true
+          shopt -s nullglob
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            apps/desktop/release/*.exe apps/desktop/release/*.dmg apps/desktop/release/*.AppImage

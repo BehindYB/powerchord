@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { applySessionEvent } from './transcript.ts';
-import { createSessionState, type SessionEvent, type SessionState } from './types.ts';
+import { chatHistoryFromTranscript } from './model-chat/session.ts';
+import { applySessionEvent, settleSessionState } from './transcript.ts';
+import {
+  createSessionState,
+  parseAgentQuestions,
+  type SessionEvent,
+  type SessionState,
+} from './types.ts';
 
 function run(events: SessionEvent[], state: SessionState = createSessionState()): SessionState {
   return events.reduce(applySessionEvent, state);
@@ -26,6 +32,7 @@ describe('applySessionEvent', () => {
         input: { command: 'ls' },
         toolCallId: 't1',
         status: 'allow',
+        answers: null,
       },
     ]);
   });
@@ -67,5 +74,73 @@ describe('applySessionEvent', () => {
       fiveHour: { utilization: 0.1, resetsAt: 1 },
       sevenDay: { utilization: 0.2, resetsAt: 2 },
     });
+  });
+});
+
+describe('restored sessions', () => {
+  const events: SessionEvent[] = [
+    { type: 'status', status: 'running' },
+    { type: 'user-message', id: 'u1', text: 'Hi' },
+    { type: 'block-start', id: 'a1', kind: 'thinking' },
+    { type: 'block-delta', id: 'a1', text: 'Greeting' },
+    { type: 'block-end', id: 'a1' },
+    { type: 'block-start', id: 'a2', kind: 'text' },
+    { type: 'block-delta', id: 'a2', text: 'Hello' },
+    { type: 'user-message', id: 'u2', text: 'Failed request' },
+    { type: 'error', id: 'e1', message: 'Server unavailable' },
+    { type: 'user-message', id: 'u3', text: 'Again' },
+    { type: 'text', id: 'a3', kind: 'text', text: 'Sure' },
+    {
+      type: 'permission-request',
+      requestId: 'p1',
+      toolName: 'Bash',
+      input: {},
+      toolCallId: null,
+    },
+  ];
+
+  it('closes open items and stops running', () => {
+    const state = settleSessionState(run(events));
+    expect(state.status).toBe('idle');
+    expect(state.items.find((item) => item.id === 'a2')).toMatchObject({ streaming: false });
+    expect(state.items.find((item) => item.id === 'p1')).toMatchObject({ status: 'deny' });
+  });
+
+  it('rebuilds chat history from answered messages only', () => {
+    expect(chatHistoryFromTranscript(run(events).items)).toEqual([
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: 'Hello' },
+      { role: 'user', content: 'Again' },
+      { role: 'assistant', content: 'Sure' },
+    ]);
+  });
+});
+
+describe('parseAgentQuestions', () => {
+  it('reads well-formed questions and skips malformed ones', () => {
+    expect(
+      parseAgentQuestions({
+        questions: [
+          {
+            question: 'Which database?',
+            header: 'Database',
+            options: [{ label: 'SQLite', description: 'Embedded' }, { label: 'Postgres' }, 3],
+            multiSelect: false,
+          },
+          { header: 'Missing question' },
+        ],
+      }),
+    ).toEqual([
+      {
+        question: 'Which database?',
+        header: 'Database',
+        options: [
+          { label: 'SQLite', description: 'Embedded' },
+          { label: 'Postgres', description: '' },
+        ],
+        multiSelect: false,
+      },
+    ]);
+    expect(parseAgentQuestions(null)).toEqual([]);
   });
 });

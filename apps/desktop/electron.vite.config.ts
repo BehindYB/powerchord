@@ -6,8 +6,9 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   main: {
     build: {
-      // Workspace packages ship TypeScript sources, so they are bundled rather than required.
-      externalizeDeps: { exclude: ['@powerchord/core'] },
+      // Everything the main process uses is bundled, including the workspace packages (which ship
+      // TypeScript sources), so the packaged app needs no node_modules.
+      externalizeDeps: false,
     },
   },
   preload: {},

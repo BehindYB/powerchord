@@ -10,6 +10,48 @@ export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'auto';
 
 export type PermissionBehavior = 'allow' | 'deny';
 
+/** Tool through which Claude Code asks the user multiple-choice questions. */
+export const QUESTION_TOOL_NAME = 'AskUserQuestion';
+
+export interface AgentQuestion {
+  question: string;
+  header: string;
+  options: { label: string; description: string }[];
+  multiSelect: boolean;
+}
+
+/** Answers keyed by question text; multiple selections are joined with ", ". */
+export type QuestionAnswers = Record<string, string>;
+
+/** Reads the questions of an AskUserQuestion request, ignoring malformed entries. */
+export function parseAgentQuestions(input: unknown): AgentQuestion[] {
+  const questions = (input as { questions?: unknown } | null)?.questions;
+  if (!Array.isArray(questions)) return [];
+  return questions.flatMap((entry): AgentQuestion[] => {
+    const value = entry as Record<string, unknown> | null;
+    if (typeof value?.['question'] !== 'string' || !Array.isArray(value['options'])) return [];
+    const options = value['options'].flatMap((option) => {
+      const item = option as Record<string, unknown> | null;
+      return typeof item?.['label'] === 'string'
+        ? [
+            {
+              label: item['label'],
+              description: typeof item['description'] === 'string' ? item['description'] : '',
+            },
+          ]
+        : [];
+    });
+    return [
+      {
+        question: value['question'],
+        header: typeof value['header'] === 'string' ? value['header'] : '',
+        options,
+        multiSelect: value['multiSelect'] === true,
+      },
+    ];
+  });
+}
+
 export interface UsageWindow {
   /** Fraction of the window's allowance used, from 0 to 1. */
   utilization: number;
@@ -53,7 +95,13 @@ export type SessionEvent =
       input: unknown;
       toolCallId: string | null;
     }
-  | { type: 'permission-resolved'; requestId: string; behavior: PermissionBehavior }
+  | {
+      type: 'permission-resolved';
+      requestId: string;
+      behavior: PermissionBehavior;
+      /** The user's answers when the request was a question from the agent. */
+      answers?: QuestionAnswers;
+    }
   | { type: 'turn-complete'; id: string; summary: TurnSummary }
   | { type: 'interrupted'; id: string }
   | { type: 'usage-limits'; limits: UsageLimits }
@@ -77,6 +125,7 @@ export type TranscriptItem =
       input: unknown;
       toolCallId: string | null;
       status: 'pending' | PermissionBehavior;
+      answers: QuestionAnswers | null;
     }
   | { kind: 'turn-end'; id: string; summary: TurnSummary }
   | { kind: 'interrupted'; id: string }

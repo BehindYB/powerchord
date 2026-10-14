@@ -18,10 +18,17 @@ export interface HubSettings {
   defaultModel: { endpointId: string; model: string } | null;
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+
 interface Settings {
   trustedFolders: string[];
   modelEndpoints: StoredModelEndpoint[];
   hub: HubSettings;
+  theme: ThemePreference;
+}
+
+function parseTheme(value: unknown): ThemePreference {
+  return value === 'light' || value === 'dark' ? value : 'system';
 }
 
 const DEFAULT_HUB_PORT = 47381;
@@ -78,6 +85,7 @@ async function load(): Promise<Settings> {
       ? parsed.modelEndpoints.filter(isStoredEndpoint)
       : [],
     hub: parseHub(parsed.hub),
+    theme: parseTheme(parsed.theme),
   };
   return cache;
 }
@@ -95,6 +103,28 @@ async function save(settings: Settings): Promise<void> {
 function normalizeFolder(folder: string): string {
   const absolute = resolve(folder);
   return process.platform === 'win32' ? absolute.toLowerCase() : absolute;
+}
+
+export async function getTrustedFolders(): Promise<string[]> {
+  return (await load()).trustedFolders;
+}
+
+export async function untrustFolder(folder: string): Promise<void> {
+  const settings = await load();
+  const normalized = normalizeFolder(folder);
+  await save({
+    ...settings,
+    trustedFolders: settings.trustedFolders.filter((entry) => entry !== normalized),
+  });
+}
+
+export async function getTheme(): Promise<ThemePreference> {
+  return (await load()).theme;
+}
+
+export async function setTheme(theme: ThemePreference): Promise<void> {
+  const settings = await load();
+  await save({ ...settings, theme });
 }
 
 export async function isFolderTrusted(folder: string): Promise<boolean> {
@@ -144,4 +174,12 @@ export async function getHubSettings(): Promise<HubSettings> {
 export async function setHubDefaultModel(defaultModel: HubSettings['defaultModel']): Promise<void> {
   const settings = await load();
   await save({ ...settings, hub: { ...settings.hub, defaultModel } });
+}
+
+/** Replaces the hub token; agents registered with the old token must be registered again. */
+export async function regenerateHubToken(): Promise<HubSettings> {
+  const settings = await load();
+  const hub = { ...settings.hub, token: randomBytes(32).toString('hex') };
+  await save({ ...settings, hub });
+  return hub;
 }

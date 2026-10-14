@@ -125,6 +125,7 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
           input: event.input,
           toolCallId: event.toolCallId,
           status: 'pending',
+          answers: null,
         },
       ]);
 
@@ -132,7 +133,9 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
       return withItems(
         state,
         replaceItem(items, event.requestId, (item) =>
-          item.kind === 'permission' ? { ...item, status: event.behavior } : item,
+          item.kind === 'permission'
+            ? { ...item, status: event.behavior, answers: event.answers ?? null }
+            : item,
         ),
       );
 
@@ -148,6 +151,14 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
     case 'error':
       return withItems(state, [...items, { kind: 'error', id: event.id, message: event.message }]);
   }
+}
+
+/**
+ * Prepares a saved session for display after a restart: nothing is running any more, so open
+ * blocks, prompts and tool calls are closed.
+ */
+export function settleSessionState(state: SessionState): SessionState {
+  return { ...state, status: 'idle', items: finishOpenItems(state.items) };
 }
 
 /** Marks streaming blocks and unanswered prompts as finished when a turn ends. */
