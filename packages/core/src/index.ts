@@ -54,3 +54,22 @@ export {
   type PermissionDecision,
   type PermissionRequest,
 } from './mcp/server.ts';
+export { ModelChatSession, type ModelChatSessionOptions } from './sessions/model-chat/session.ts';
+export {
+  listModels,
+  normalizeBaseUrl,
+  streamChat,
+  type ChatMessage,
+  type ChatStreamChunk,
+  type ModelEndpoint,
+} from './models/openai-compatible.ts';
+export {
+  discoverServers,
+  isPrivateAddress,
+  KNOWN_PORTS,
+  planDiscovery,
+  type DiscoveredServer,
+  type DiscoveryPlan,
+  type ScannedNetwork,
+} from './models/discovery.ts';
+export { localInterfaceAddresses, readNeighborAddresses } from './models/network.ts';

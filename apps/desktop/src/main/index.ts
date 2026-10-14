@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron';
 import { IpcChannel, type AppInfo } from '../shared/ipc';
 import { registerAgentHandlers } from './agents';
+import { registerModelHandlers } from './models';
 import { SessionManager } from './sessions';
 
 const APP_USER_MODEL_ID = 'io.github.behindyb.powerchord';
@@ -84,6 +85,7 @@ function registerIpcHandlers(): void {
     platform: process.platform,
   }));
   registerAgentHandlers();
+  registerModelHandlers();
 }
 
 if (!app.requestSingleInstanceLock()) {

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
   IpcChannel,
+  type DiscoveryProgress,
   type InstallOutputEvent,
   type PowerChordApi,
   type SessionEventMessage,
@@ -37,6 +38,15 @@ const api: PowerChordApi = {
   onSessionEvent: (listener) => subscribe<SessionEventMessage>(IpcChannel.SessionEvent, listener),
   onSessionsChanged: (listener) =>
     subscribe<SessionSummary[]>(IpcChannel.SessionsChanged, listener),
+
+  listModelEndpoints: () => ipcRenderer.invoke(IpcChannel.ListModelEndpoints),
+  addModelEndpoint: (baseUrl, name) =>
+    ipcRenderer.invoke(IpcChannel.AddModelEndpoint, baseUrl, name),
+  removeModelEndpoint: (endpointId) =>
+    ipcRenderer.invoke(IpcChannel.RemoveModelEndpoint, endpointId),
+  discoverModelServers: () => ipcRenderer.invoke(IpcChannel.DiscoverModelServers),
+  onDiscoveryProgress: (listener) =>
+    subscribe<DiscoveryProgress>(IpcChannel.DiscoveryProgress, listener),
 };
 
 contextBridge.exposeInMainWorld('powerchord', api);

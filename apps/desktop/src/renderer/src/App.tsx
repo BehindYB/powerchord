@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AgentsView } from './components/AgentsView';
+import { ModelsView } from './components/ModelsView';
 import { NewSessionView } from './components/NewSessionView';
 import { SessionView } from './components/SessionView';
 import { Sidebar, type View } from './components/Sidebar';
@@ -14,6 +15,8 @@ export function App() {
   let content;
   if (view.kind === 'agents') {
     content = <AgentsView />;
+  } else if (view.kind === 'models') {
+    content = <ModelsView />;
   } else if (activeSession) {
     // Keyed by id so per-session view state resets when switching sessions.
     content = (
@@ -28,6 +31,7 @@ export function App() {
       <NewSessionView
         onCreated={(id) => setView({ kind: 'session', id })}
         onOpenAgents={() => setView({ kind: 'agents' })}
+        onOpenModels={() => setView({ kind: 'models' })}
       />
     );
   }

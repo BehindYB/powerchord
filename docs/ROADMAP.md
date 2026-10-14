@@ -26,36 +26,39 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Multiple concurrent sessions, each with its own agent, model and working directory, with a split view to follow them side by side
 - "Open in" actions for a session's working directory: Antigravity (desktop app, or `agy` in the system terminal), editor, terminal. PowerChord only launches these tools and never drives them.
 
-## Phase 3: Codex and Gemini CLI
+## Phase 3: Local models (done)
 
-- Codex through its official app-server protocol, signed in with the user's own `codex login`
-- Gemini CLI over ACP (`gemini --acp`), signed in through its own flow; a paid Gemini API key can be billed to the Google Cloud credits included in Google AI Pro/Ultra
-- Per-session model selection from the models each agent reports, changeable mid-session where the agent supports it
-- Evaluate joining OpenAI's "Sign in with ChatGPT" program
+- OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp server, vLLM and others), local or on the network
+- Network discovery: complete scan of small networks (such as an OpenVPN site network) and likely addresses on large ones, only on request
+- Chat sessions with local models, with streaming answers and reasoning output
+- Remaining: API keys for protected endpoints (OS secure storage)
 
-## Phase 3b: Shared context hub (MCP)
+## Phase 4: Shared context hub (MCP)
 
-- Local PowerChord MCP server with context tools: tasks, notes, plans, summaries, status
+- Extend PowerChord's local MCP server (already used for Claude Code permission prompts) with context tools: tasks, notes, plans, summaries, status
+- `ask_local_model`: lets agents such as Claude Code delegate work to local models
 - Available to agents driven by PowerChord and to agents used directly, such as Antigravity
 - Guided registration in each agent through its own MCP command, with user confirmation
 - Hand-off flow: plan in one agent, continue in another, review in a third, all recorded in PowerChord
 - Rules in [COMPLIANCE.md](COMPLIANCE.md#powerchord-mcp-server)
 
-## Phase 4: Model backends
+## Phase 5: Codex and Gemini
 
-- OpenAI-compatible endpoints (Ollama, llama.cpp server, LM Studio, vLLM), local or on the network
-- Gemini through a Google AI Studio API key, including keys billed to the monthly Google Cloud credits of a Google AI Pro/Ultra plan
-- Usage tracking, budgets and warnings for billed keys
-- Endpoint and key management (OS secure storage), model discovery
-- Chat sessions with model backends
+- Codex through its official app-server protocol, signed in with the user's own `codex login`
+- Gemini CLI over ACP (`gemini --acp`) with a paid Gemini API key, which can be billed to the Google Cloud credits included in Google AI Pro/Ultra
+- Gemini chat through a Google AI Studio API key, with usage tracking, budgets and warnings
+- Evaluate joining OpenAI's "Sign in with ChatGPT" program
+- Evaluate running Claude Code against local models through an LLM gateway
 
-## Phase 5: Persistence and polish
+## Phase 6: Persistence and polish
 
-- Session history stored locally (SQLite) with search
+- Session history stored locally (SQLite) with search, and resuming Claude Code sessions after a restart
+- Split view to follow several sessions side by side
+- Interactive questions from agents (Claude Code's AskUserQuestion)
 - Settings, keyboard shortcuts, theming
 - Packaging and auto-update for Windows, then macOS and Linux
 
-## Phase 6: Pay-as-you-go APIs
+## Phase 7: Pay-as-you-go APIs
 
 - Direct API backends for Anthropic and OpenAI
 - Cost estimation, per-session and monthly budgets, and warnings before expensive requests

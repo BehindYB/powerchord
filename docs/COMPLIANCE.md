@@ -46,6 +46,16 @@ The MCP server lets any agent, whether driven by PowerChord or used directly by 
 3. The server listens only on local transports (stdio, or loopback HTTP with a per-install token). It is never exposed to the network.
 4. Tool calls follow each agent's own approval settings; PowerChord does not ask users to auto-approve its tools.
 
+## Network discovery
+
+PowerChord can look for model servers (Ollama, LM Studio, llama.cpp, vLLM and similar) on the user's networks. To keep this a convenience rather than a scanner:
+
+1. Discovery runs only when the user starts it; it never runs in the background or on a schedule.
+2. Only private addresses are probed: loopback, RFC 1918 and carrier-grade NAT (100.64.0.0/10), and only on networks this machine is attached to, plus hosts where servers were found before.
+3. Small networks (/22 or smaller) are probed completely; larger ones only at likely addresses: hosts in the system neighbor table, the first addresses of the range, and the /24 around this machine. The total is capped at 4096 hosts.
+4. Only the default ports of known inference servers are tried, with a short TCP connect followed by a single `GET /v1/models`. Nothing else is sent, and nothing is stored except endpoints the user chooses to add.
+5. The interface tells users to scan only networks they are allowed to scan.
+
 ## Usage
 
 1. PowerChord is a local, single-user application. It must not route one user's subscription usage on behalf of another person, expose agents over the network, or pool accounts.

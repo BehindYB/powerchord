@@ -7,6 +7,7 @@ import {
   createSessionState,
   detectAgent,
   getAgent,
+  ModelChatSession,
   openInTerminal,
   PowerChordMcpServer,
   resolveSearchPath,
@@ -25,6 +26,7 @@ import {
   type SessionSnapshot,
   type SessionSummary,
 } from '../shared/ipc';
+import { findEndpoint } from './models';
 import { isFolderTrusted, trustFolder } from './settings';
 
 const TITLE_LENGTH = 60;
@@ -33,7 +35,7 @@ interface ManagedSession {
   summary: SessionSummary;
   state: SessionState;
   seq: number;
-  agent: ClaudeCodeSession;
+  agent: ClaudeCodeSession | ModelChatSession;
 }
 
 function broadcast(channel: string, payload: unknown): void {
@@ -46,8 +48,19 @@ function isPermissionMode(value: unknown): value is PermissionMode {
   return PERMISSION_MODES.some((mode) => mode.id === value);
 }
 
-function isModel(value: unknown): value is string | null {
+function isClaudeModel(value: unknown): value is string | null {
   return CLAUDE_MODELS.some((model) => model.id === value);
+}
+
+function isModelName(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256;
+}
+
+function claudeSession(session: ManagedSession): ClaudeCodeSession {
+  if (!(session.agent instanceof ClaudeCodeSession)) {
+    throw new Error('This action is only available for Claude Code sessions.');
+  }
+  return session.agent;
 }
 
 function makeTitle(text: string): string {
@@ -123,40 +136,65 @@ export class SessionManager {
   }
 
   private async create(request: CreateSessionRequest): Promise<SessionSummary> {
-    if (request.agentId !== 'claude-code') throw new Error('Unsupported agent');
-    if (!isModel(request.model) || !isPermissionMode(request.permissionMode)) {
-      throw new Error('Invalid session settings');
-    }
-    const folder = await stat(request.cwd).catch(() => null);
-    if (!folder?.isDirectory()) throw new Error('The working folder does not exist.');
-    if (!(await isFolderTrusted(request.cwd)))
-      throw new Error('The working folder is not trusted.');
-
-    const searchPath = await resolveSearchPath();
-    const status = await detectAgent(getAgent('claude-code'), { searchPath });
-    if (!status.path)
-      throw new Error('Claude Code is not installed. Install it from the Agents screen.');
-
     const id = randomUUID();
-    const summary: SessionSummary = {
-      id,
-      agentId: 'claude-code',
-      title: 'New session',
-      cwd: request.cwd,
-      status: 'idle',
-      model: request.model,
-      permissionMode: request.permissionMode,
-      createdAt: Date.now(),
-    };
-    const agent = new ClaudeCodeSession({
-      executable: status.path,
-      cwd: request.cwd,
-      env: buildChildEnv(searchPath),
-      mcp: this.mcp,
-      model: request.model,
-      permissionMode: request.permissionMode,
-      onEvent: (event) => this.handleEvent(id, event),
-    });
+    const onEvent = (event: SessionEvent) => this.handleEvent(id, event);
+    const base = { id, title: 'New session', status: 'idle' as const, createdAt: Date.now() };
+    let summary: SessionSummary;
+    let agent: ClaudeCodeSession | ModelChatSession;
+
+    if (request.agentId === 'claude-code') {
+      if (!isClaudeModel(request.model) || !isPermissionMode(request.permissionMode)) {
+        throw new Error('Invalid session settings');
+      }
+      const folder = await stat(request.cwd).catch(() => null);
+      if (!folder?.isDirectory()) throw new Error('The working folder does not exist.');
+      if (!(await isFolderTrusted(request.cwd))) {
+        throw new Error('The working folder is not trusted.');
+      }
+      const searchPath = await resolveSearchPath();
+      const status = await detectAgent(getAgent('claude-code'), { searchPath });
+      if (!status.path) {
+        throw new Error('Claude Code is not installed. Install it from the Agents screen.');
+      }
+      summary = {
+        ...base,
+        agentId: 'claude-code',
+        cwd: request.cwd,
+        endpointId: null,
+        model: request.model,
+        permissionMode: request.permissionMode,
+      };
+      agent = new ClaudeCodeSession({
+        executable: status.path,
+        cwd: request.cwd,
+        env: buildChildEnv(searchPath),
+        mcp: this.mcp,
+        model: request.model,
+        permissionMode: request.permissionMode,
+        onEvent,
+      });
+    } else if (request.agentId === 'local-model') {
+      if (!isModelName(request.model)) throw new Error('Choose a model');
+      const endpoint =
+        typeof request.endpointId === 'string' ? await findEndpoint(request.endpointId) : undefined;
+      if (!endpoint) throw new Error('Unknown model endpoint');
+      summary = {
+        ...base,
+        agentId: 'local-model',
+        cwd: null,
+        endpointId: endpoint.id,
+        model: request.model,
+        permissionMode: null,
+      };
+      agent = new ModelChatSession({
+        endpoint: { baseUrl: endpoint.baseUrl },
+        model: request.model,
+        onEvent,
+      });
+    } else {
+      throw new Error('Unsupported agent');
+    }
+
     this.sessions.set(id, { summary, state: createSessionState(), seq: 0, agent });
     this.notifySessionsChanged();
     return summary;
@@ -184,8 +222,10 @@ export class SessionManager {
   }
 
   private async openIn(session: ManagedSession, target: OpenTarget): Promise<void> {
+    const { cwd } = session.summary;
+    if (cwd === null) throw new Error('This session has no working folder.');
     if (target === 'explorer') {
-      const error = await shell.openPath(session.summary.cwd);
+      const error = await shell.openPath(cwd);
       if (error) throw new Error(error);
       return;
     }
@@ -195,7 +235,7 @@ export class SessionManager {
     // Launch only: the user works in Antigravity's own interface (docs/COMPLIANCE.md).
     await openInTerminal(
       { command: antigravity.path, args: [] },
-      { cwd: session.summary.cwd, env: buildChildEnv(searchPath) },
+      { cwd, env: buildChildEnv(searchPath) },
     );
   }
 
@@ -224,7 +264,7 @@ export class SessionManager {
         if (typeof requestId !== 'string') throw new Error('Invalid request');
         if (behavior !== 'allow' && behavior !== 'deny') throw new Error('Invalid decision');
         if (scope !== 'once' && scope !== 'session') throw new Error('Invalid scope');
-        this.require(sessionId).agent.respondToPermission(requestId, behavior, scope);
+        claudeSession(this.require(sessionId)).respondToPermission(requestId, behavior, scope);
       },
     );
     ipcMain.handle(
@@ -232,13 +272,17 @@ export class SessionManager {
       (_event, sessionId: unknown, settings: { model?: unknown; permissionMode?: unknown }) => {
         const session = this.require(sessionId);
         if (settings.model !== undefined) {
-          if (!isModel(settings.model)) throw new Error('Invalid model');
-          session.agent.setModel(settings.model);
-          session.summary = { ...session.summary, model: settings.model };
+          const valid =
+            session.agent instanceof ClaudeCodeSession
+              ? isClaudeModel(settings.model)
+              : isModelName(settings.model);
+          if (!valid) throw new Error('Invalid model');
+          session.agent.setModel(settings.model as string | null);
+          session.summary = { ...session.summary, model: settings.model as string | null };
         }
         if (settings.permissionMode !== undefined) {
           if (!isPermissionMode(settings.permissionMode)) throw new Error('Invalid mode');
-          session.agent.setPermissionMode(settings.permissionMode);
+          claudeSession(session).setPermissionMode(settings.permissionMode);
           session.summary = { ...session.summary, permissionMode: settings.permissionMode };
         }
         this.notifySessionsChanged();

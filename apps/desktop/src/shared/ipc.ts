@@ -28,6 +28,11 @@ export const IpcChannel = {
   OpenSessionIn: 'sessions:open-in',
   SessionEvent: 'sessions:event',
   SessionsChanged: 'sessions:changed',
+  ListModelEndpoints: 'models:list-endpoints',
+  AddModelEndpoint: 'models:add-endpoint',
+  RemoveModelEndpoint: 'models:remove-endpoint',
+  DiscoverModelServers: 'models:discover',
+  DiscoveryProgress: 'models:discover-progress',
 } as const;
 
 export interface AppInfo {
@@ -71,7 +76,7 @@ export interface InstallOutputEvent {
 }
 
 /** Agents that PowerChord can run sessions with. */
-export type SessionAgentId = 'claude-code';
+export type SessionAgentId = 'claude-code' | 'local-model';
 
 export interface ModelOption {
   /** Value passed to the agent; null selects the agent's default model. */
@@ -102,10 +107,14 @@ export interface SessionSummary {
   id: string;
   agentId: SessionAgentId;
   title: string;
-  cwd: string;
+  /** Working folder; null for local model chats, which have no file access. */
+  cwd: string | null;
+  /** Model endpoint of a local model chat. */
+  endpointId: string | null;
   status: SessionStatus;
   model: string | null;
-  permissionMode: PermissionMode;
+  /** Null for agents without permission modes. */
+  permissionMode: PermissionMode | null;
   createdAt: number;
 }
 
@@ -116,11 +125,28 @@ export interface SessionSnapshot {
   seq: number;
 }
 
-export interface CreateSessionRequest {
-  agentId: SessionAgentId;
-  cwd: string;
-  model: string | null;
-  permissionMode: PermissionMode;
+export type CreateSessionRequest =
+  | { agentId: 'claude-code'; cwd: string; model: string | null; permissionMode: PermissionMode }
+  | { agentId: 'local-model'; endpointId: string; model: string };
+
+export interface ModelEndpointInfo {
+  id: string;
+  name: string;
+  baseUrl: string;
+  online: boolean;
+  models: string[];
+  error: string | null;
+}
+
+export interface DiscoveryResult {
+  networks: { interfaceName: string; cidr: string; mode: 'full' | 'likely' }[];
+  hostsScanned: number;
+  servers: { baseUrl: string; name: string; models: string[]; alreadyAdded: boolean }[];
+}
+
+export interface DiscoveryProgress {
+  done: number;
+  total: number;
 }
 
 export interface SessionEventMessage {
@@ -164,4 +190,13 @@ export interface PowerChordApi {
   openSessionIn(sessionId: string, target: OpenTarget): Promise<void>;
   onSessionEvent(listener: (message: SessionEventMessage) => void): () => void;
   onSessionsChanged(listener: (sessions: SessionSummary[]) => void): () => void;
+
+  /** Saved model endpoints, each checked for availability. */
+  listModelEndpoints(): Promise<ModelEndpointInfo[]>;
+  /** Verifies that the address serves an OpenAI-compatible API, then saves it. */
+  addModelEndpoint(baseUrl: string, name?: string): Promise<ModelEndpointInfo>;
+  removeModelEndpoint(endpointId: string): Promise<void>;
+  /** Scans the user's private networks for model servers. Runs only when the user asks. */
+  discoverModelServers(): Promise<DiscoveryResult>;
+  onDiscoveryProgress(listener: (progress: DiscoveryProgress) => void): () => void;
 }

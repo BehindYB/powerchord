@@ -1,12 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { app } from 'electron';
 
-interface Settings {
-  trustedFolders: string[];
+export interface StoredModelEndpoint {
+  id: string;
+  name: string;
+  baseUrl: string;
 }
 
-const DEFAULTS: Settings = { trustedFolders: [] };
+interface Settings {
+  trustedFolders: string[];
+  modelEndpoints: StoredModelEndpoint[];
+}
 
 let cache: Settings | null = null;
 
@@ -14,18 +20,32 @@ function settingsPath(): string {
   return join(app.getPath('userData'), 'settings.json');
 }
 
+function isStoredEndpoint(value: unknown): value is StoredModelEndpoint {
+  if (typeof value !== 'object' || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry['id'] === 'string' &&
+    typeof entry['name'] === 'string' &&
+    typeof entry['baseUrl'] === 'string'
+  );
+}
+
 async function load(): Promise<Settings> {
   if (cache) return cache;
+  let parsed: Partial<Record<keyof Settings, unknown>> = {};
   try {
-    const parsed = JSON.parse(await readFile(settingsPath(), 'utf8')) as Partial<Settings>;
-    cache = {
-      trustedFolders: Array.isArray(parsed.trustedFolders)
-        ? parsed.trustedFolders.filter((entry): entry is string => typeof entry === 'string')
-        : [],
-    };
+    parsed = JSON.parse(await readFile(settingsPath(), 'utf8')) as typeof parsed;
   } catch {
-    cache = { ...DEFAULTS };
+    // Missing or unreadable settings start from defaults.
   }
+  cache = {
+    trustedFolders: Array.isArray(parsed.trustedFolders)
+      ? parsed.trustedFolders.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+    modelEndpoints: Array.isArray(parsed.modelEndpoints)
+      ? parsed.modelEndpoints.filter(isStoredEndpoint)
+      : [],
+  };
   return cache;
 }
 
@@ -54,4 +74,29 @@ export async function trustFolder(folder: string): Promise<void> {
   const normalized = normalizeFolder(folder);
   if (settings.trustedFolders.includes(normalized)) return;
   await save({ ...settings, trustedFolders: [...settings.trustedFolders, normalized] });
+}
+
+export async function getModelEndpoints(): Promise<StoredModelEndpoint[]> {
+  return (await load()).modelEndpoints;
+}
+
+/** Adds an endpoint, or returns the existing one with the same base URL. */
+export async function addModelEndpoint(
+  baseUrl: string,
+  name: string,
+): Promise<StoredModelEndpoint> {
+  const settings = await load();
+  const existing = settings.modelEndpoints.find((entry) => entry.baseUrl === baseUrl);
+  if (existing) return existing;
+  const endpoint = { id: randomUUID(), name, baseUrl };
+  await save({ ...settings, modelEndpoints: [...settings.modelEndpoints, endpoint] });
+  return endpoint;
+}
+
+export async function removeModelEndpoint(id: string): Promise<void> {
+  const settings = await load();
+  await save({
+    ...settings,
+    modelEndpoints: settings.modelEndpoints.filter((entry) => entry.id !== id),
+  });
 }

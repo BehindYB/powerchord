@@ -1,7 +1,8 @@
 import type { SessionSummary } from '../../../shared/ipc';
 import { useAppInfo } from '../hooks/useAppInfo';
 
-export type View = { kind: 'new' } | { kind: 'agents' } | { kind: 'session'; id: string };
+export type View =
+  { kind: 'new' } | { kind: 'agents' } | { kind: 'models' } | { kind: 'session'; id: string };
 
 interface SidebarProps {
   view: View;
@@ -77,7 +78,7 @@ export function Sidebar({ view, sessions, onNavigate }: SidebarProps) {
                     type="button"
                     onClick={() => onNavigate({ kind: 'session', id: session.id })}
                     aria-current={active ? 'page' : undefined}
-                    title={session.cwd}
+                    title={session.cwd ?? session.model ?? undefined}
                     className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${
                       active ? 'bg-hover' : 'text-muted hover:bg-hover hover:text-text'
                     }`}
@@ -95,6 +96,9 @@ export function Sidebar({ view, sessions, onNavigate }: SidebarProps) {
       <nav aria-label="App" className="border-t border-border px-3 py-2">
         <NavButton active={view.kind === 'agents'} onClick={() => onNavigate({ kind: 'agents' })}>
           Agents
+        </NavButton>
+        <NavButton active={view.kind === 'models'} onClick={() => onNavigate({ kind: 'models' })}>
+          Models
         </NavButton>
       </nav>
 
