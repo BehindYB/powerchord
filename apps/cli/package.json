@@ -1,0 +1,18 @@
+{
+  "name": "@powerchord/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PowerChord command-line tool: agent setup and diagnostics.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "powerchord": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@powerchord/core": "*"
+  }
+}

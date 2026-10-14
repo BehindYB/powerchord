@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron';
 import { IpcChannel, type AppInfo } from '../shared/ipc';
+import { registerAgentHandlers } from './agents';
 
 const APP_USER_MODEL_ID = 'io.github.behindyb.powerchord';
 const TITLE_BAR_HEIGHT = 40;
@@ -79,6 +80,7 @@ function registerIpcHandlers(): void {
     version: app.getVersion(),
     platform: process.platform,
   }));
+  registerAgentHandlers();
 }
 
 if (!app.requestSingleInstanceLock()) {

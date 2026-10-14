@@ -8,7 +8,7 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Electron + React + Tailwind application shell with secure defaults (context isolation, sandbox, CSP)
 - Project documentation and CI
 
-## Phase 1: Agent setup
+## Phase 1: Agent setup (done)
 
 - `@powerchord/core` package with a catalog of supported agents (official install channels, version detection, login commands)
 - Detection of installed agents and their versions

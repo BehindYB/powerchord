@@ -4,7 +4,12 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      // Workspace packages ship TypeScript sources, so they are bundled rather than required.
+      externalizeDeps: { exclude: ['@powerchord/core'] },
+    },
+  },
   preload: {},
   renderer: {
     resolve: {

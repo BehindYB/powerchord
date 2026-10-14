@@ -2,7 +2,7 @@
 
 A desktop workspace for AI coding agents and models. Run **Claude Code**, **OpenAI Codex**, **Gemini** and **local models** from a single interface, using the subscriptions and tools you already have.
 
-> **Status: pre-alpha.** The application shell is in place; agent integrations are under active development. See the [roadmap](docs/ROADMAP.md).
+> **Status: pre-alpha.** Agent setup (detection, installation and sign-in) works; agent sessions are under active development. See the [roadmap](docs/ROADMAP.md).
 
 ## How it works
 
@@ -26,21 +26,22 @@ See [docs/COMPLIANCE.md](docs/COMPLIANCE.md) for the full set of rules the codeb
 
 ## Development
 
-Requirements: Node.js 22.12 or later (24 recommended) and npm.
+Requirements: Node.js 22.18 or later (24 recommended) and npm.
 
 ```bash
 npm install
 npm run dev
 ```
 
-| Command             | Description                           |
-| ------------------- | ------------------------------------- |
-| `npm run dev`       | Start the desktop app with hot reload |
-| `npm run build`     | Build the desktop app                 |
-| `npm run typecheck` | Type-check all workspaces             |
-| `npm run lint`      | Lint the repository                   |
-| `npm run format`    | Format the repository with Prettier   |
-| `npm test`          | Run the test suite                    |
+| Command                    | Description                                           |
+| -------------------------- | ----------------------------------------------------- |
+| `npm run dev`              | Start the desktop app with hot reload                 |
+| `npm run build`            | Build the desktop app                                 |
+| `npm run typecheck`        | Type-check all workspaces                             |
+| `npm run lint`             | Lint the repository                                   |
+| `npm run format`           | Format the repository with Prettier                   |
+| `npm test`                 | Run the test suite                                    |
+| `npm run cli -- <command>` | Run the `powerchord` CLI (`doctor`, `setup`, `login`) |
 
 ## Disclaimer
 
