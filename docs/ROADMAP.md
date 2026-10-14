@@ -26,11 +26,20 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Multiple concurrent sessions, each with its own agent, model and working directory, with a split view to follow them side by side
 - "Open in" actions for a session's working directory: Antigravity (desktop app, or `agy` in the system terminal), editor, terminal. PowerChord only launches these tools and never drives them.
 
-## Phase 3: Codex
+## Phase 3: Codex and Gemini CLI
 
 - Codex through its official app-server protocol, signed in with the user's own `codex login`
+- Gemini CLI over ACP (`gemini --acp`), signed in through its own flow; a paid Gemini API key can be billed to the Google Cloud credits included in Google AI Pro/Ultra
 - Per-session model selection from the models each agent reports, changeable mid-session where the agent supports it
 - Evaluate joining OpenAI's "Sign in with ChatGPT" program
+
+## Phase 3b: Shared context hub (MCP)
+
+- Local PowerChord MCP server with context tools: tasks, notes, plans, summaries, status
+- Available to agents driven by PowerChord and to agents used directly, such as Antigravity
+- Guided registration in each agent through its own MCP command, with user confirmation
+- Hand-off flow: plan in one agent, continue in another, review in a third, all recorded in PowerChord
+- Rules in [COMPLIANCE.md](COMPLIANCE.md#powerchord-mcp-server)
 
 ## Phase 4: Model backends
 
