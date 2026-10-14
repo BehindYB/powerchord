@@ -186,7 +186,7 @@ export function SessionView({
       }`}
     >
       <div
-        className={`flex flex-wrap items-center gap-3 border-b border-border ${padding} ${onClosePane ? 'py-3' : 'pb-3'}`}
+        className={`relative flex flex-wrap items-center gap-3 border-b border-border ${padding} ${onClosePane ? 'py-3 pr-12' : 'pb-3'}`}
       >
         <div className="min-w-0">
           <h1 className="truncate text-base font-semibold">{summary.title}</h1>
@@ -236,7 +236,7 @@ export function SessionView({
               onClick={onClosePane}
               aria-label="Close pane"
               title="Close pane"
-              className="rounded-lg px-2 py-1 text-xs text-muted hover:bg-hover hover:text-text"
+              className="absolute top-3 right-3 rounded-lg px-2 py-1 text-xs text-muted hover:bg-hover hover:text-text"
             >
               ✕
             </button>
