@@ -8,6 +8,7 @@ import {
   type PowerChordMcpServer,
 } from '../../mcp/server.ts';
 import { JsonRpcConnection, JsonRpcError, METHOD_NOT_FOUND } from '../../system/json-rpc.ts';
+import { readableErrorMessage } from '../../system/errors.ts';
 import { spawnAgentProcess, stopProcessTree } from '../../system/process.ts';
 import type {
   AgentSession,
@@ -84,28 +85,6 @@ interface ModeState {
 interface ModelState {
   currentModelId?: string;
   availableModels?: { modelId: string; name: string; description?: string | null }[];
-}
-
-/**
- * Agents often relay API errors as JSON, sometimes nested inside other JSON strings. Returns the
- * innermost human-readable message.
- */
-export function readableErrorMessage(message: string): string {
-  let current = message;
-  for (let depth = 0; depth < 5; depth++) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(current);
-    } catch {
-      return current;
-    }
-    const inner =
-      (parsed as { error?: { message?: unknown }; message?: unknown } | null)?.error?.message ??
-      (parsed as { message?: unknown } | null)?.message;
-    if (typeof inner !== 'string') return current;
-    current = inner;
-  }
-  return current;
 }
 
 const TOOL_KIND_NAMES: Record<string, string> = {

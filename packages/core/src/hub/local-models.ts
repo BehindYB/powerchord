@@ -1,9 +1,22 @@
-import { completeChat, listModels, type ChatMessage } from '../models/openai-compatible.ts';
+import {
+  completeChat,
+  listModels,
+  type ChatMessage,
+  type ModelEndpoint,
+} from '../models/openai-compatible.ts';
 import type { LocalModelGateway, LocalModelInfo } from './tools.ts';
 
 export interface GatewayEndpoint {
   name: string;
   baseUrl: string;
+  /** Key for servers that require one. */
+  apiKey?: string;
+}
+
+function connection(endpoint: GatewayEndpoint): ModelEndpoint {
+  return endpoint.apiKey
+    ? { baseUrl: endpoint.baseUrl, apiKey: endpoint.apiKey }
+    : { baseUrl: endpoint.baseUrl };
 }
 
 export interface GatewayOptions {
@@ -27,10 +40,7 @@ export function createLocalModelGateway(options: GatewayOptions): LocalModelGate
     const results = await Promise.all(
       endpoints.map(async (endpoint) => {
         try {
-          const models = await listModels(
-            { baseUrl: endpoint.baseUrl },
-            AbortSignal.timeout(listTimeout),
-          );
+          const models = await listModels(connection(endpoint), AbortSignal.timeout(listTimeout));
           return { ...endpoint, models };
         } catch {
           return null;
@@ -82,7 +92,7 @@ export function createLocalModelGateway(options: GatewayOptions): LocalModelGate
         { role: 'user', content: request.prompt },
       ];
       const { text } = await completeChat(
-        { baseUrl: target.endpoint.baseUrl },
+        connection(target.endpoint),
         {
           model: target.model,
           messages,

@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PowerChordMcpServer } from '../mcp/server.ts';
-import { AcpSession, readableErrorMessage } from './acp/session.ts';
+import { readableErrorMessage } from '../system/errors.ts';
+import { AcpSession } from './acp/session.ts';
 import { CodexSession } from './codex/session.ts';
 import { applySessionEvent } from './transcript.ts';
 import {

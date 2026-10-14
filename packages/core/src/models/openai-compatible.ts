@@ -1,3 +1,5 @@
+import { readableErrorMessage } from '../system/errors.ts';
+
 /*
  * Minimal client for OpenAI-compatible inference servers (Ollama, LM Studio, llama.cpp server,
  * vLLM, Jan and others), used for local and self-hosted models.
@@ -34,6 +36,14 @@ function url(endpoint: ModelEndpoint, path: string): string {
   return `${endpoint.baseUrl.replace(/\/+$/, '')}${path}`;
 }
 
+/** Builds an error from a failed response, keeping the server's own explanation. */
+export async function responseError(response: Response): Promise<Error> {
+  const detail = readableErrorMessage((await response.text().catch(() => '')).trim());
+  return new Error(
+    `The server answered ${response.status} ${response.statusText}${detail ? `: ${detail.slice(0, 500)}` : ''}`,
+  );
+}
+
 /** Normalizes user input such as `10.0.0.5:11434` into a base URL ending in `/v1`. */
 export function normalizeBaseUrl(input: string): string {
   let value = input.trim();
@@ -52,8 +62,7 @@ export async function listModels(endpoint: ModelEndpoint, signal?: AbortSignal):
     headers: headers(endpoint),
     ...(signal ? { signal } : {}),
   });
-  if (!response.ok)
-    throw new Error(`The server answered ${response.status} ${response.statusText}`);
+  if (!response.ok) throw await responseError(response);
   const body = (await response.json()) as { data?: unknown };
   if (!Array.isArray(body.data)) throw new Error('The server did not return a model list');
   return body.data
@@ -141,12 +150,7 @@ export async function* streamChat(
     }),
     ...(signal ? { signal } : {}),
   });
-  if (!response.ok || !response.body) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(
-      `The server answered ${response.status} ${response.statusText}${detail ? `: ${detail.slice(0, 500)}` : ''}`,
-    );
-  }
+  if (!response.ok || !response.body) throw await responseError(response);
   for await (const data of readServerSentEvents(response.body)) {
     if (data === '[DONE]') return;
     yield* parseChunk(data);

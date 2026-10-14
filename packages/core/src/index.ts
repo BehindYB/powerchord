@@ -109,3 +109,17 @@ export {
 export type { HubContext, LocalModelGateway, LocalModelInfo } from './hub/tools.ts';
 export { createLocalModelGateway, type GatewayEndpoint } from './hub/local-models.ts';
 export { createToken, MCP_SERVER_NAME, type McpServerStartResult } from './mcp/server.ts';
+export { readableErrorMessage } from './system/errors.ts';
+export {
+  approximateTokens,
+  estimateCost,
+  findPrice,
+  PRICES_REVIEWED,
+  type ModelPrice,
+  type PricedProvider,
+} from './models/pricing.ts';
+export {
+  ANTHROPIC_BASE_URL,
+  listAnthropicModels,
+  streamAnthropicChat,
+} from './models/anthropic.ts';
