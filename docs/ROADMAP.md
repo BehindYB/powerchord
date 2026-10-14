@@ -23,11 +23,12 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Unified event model: message streaming, reasoning, tool calls, permission requests, plans, usage
 - Session view: chat transcript, markdown and code rendering, tool call cards, permission prompts, working directory selection
 - First agent: Claude Code, running the user's installed `claude` binary
+- Multiple concurrent sessions, each with its own agent, model and working directory, with a split view to follow them side by side
 
 ## Phase 3: Codex
 
 - Codex through its official app-server protocol, signed in with the user's own `codex login`
-- Per-session agent and model selection
+- Per-session model selection from the models each agent reports, changeable mid-session where the agent supports it
 - Evaluate joining OpenAI's "Sign in with ChatGPT" program
 
 ## Phase 4: Model backends
