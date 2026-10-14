@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { app } from 'electron';
@@ -9,9 +9,41 @@ export interface StoredModelEndpoint {
   baseUrl: string;
 }
 
+export interface HubSettings {
+  /** Preferred loopback port of the MCP hub, kept stable so registered agents keep working. */
+  port: number;
+  /** Bearer token for agents the user registered the hub in. */
+  token: string;
+  /** Model used by `ask_local_model` when an agent does not name one. */
+  defaultModel: { endpointId: string; model: string } | null;
+}
+
 interface Settings {
   trustedFolders: string[];
   modelEndpoints: StoredModelEndpoint[];
+  hub: HubSettings;
+}
+
+const DEFAULT_HUB_PORT = 47381;
+
+function parseHub(value: unknown): HubSettings {
+  const hub = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  const port =
+    typeof hub['port'] === 'number' && Number.isInteger(hub['port'])
+      ? hub['port']
+      : DEFAULT_HUB_PORT;
+  const token =
+    typeof hub['token'] === 'string' && /^[0-9a-f]{64}$/.test(hub['token'])
+      ? hub['token']
+      : randomBytes(32).toString('hex');
+  const preferred = hub['defaultModel'] as Record<string, unknown> | null | undefined;
+  const defaultModel =
+    preferred &&
+    typeof preferred['endpointId'] === 'string' &&
+    typeof preferred['model'] === 'string'
+      ? { endpointId: preferred['endpointId'], model: preferred['model'] }
+      : null;
+  return { port, token, defaultModel };
 }
 
 let cache: Settings | null = null;
@@ -45,6 +77,7 @@ async function load(): Promise<Settings> {
     modelEndpoints: Array.isArray(parsed.modelEndpoints)
       ? parsed.modelEndpoints.filter(isStoredEndpoint)
       : [],
+    hub: parseHub(parsed.hub),
   };
   return cache;
 }
@@ -99,4 +132,16 @@ export async function removeModelEndpoint(id: string): Promise<void> {
     ...settings,
     modelEndpoints: settings.modelEndpoints.filter((entry) => entry.id !== id),
   });
+}
+
+/** Hub settings; a token is generated and saved on first use. */
+export async function getHubSettings(): Promise<HubSettings> {
+  const settings = await load();
+  await save(settings);
+  return settings.hub;
+}
+
+export async function setHubDefaultModel(defaultModel: HubSettings['defaultModel']): Promise<void> {
+  const settings = await load();
+  await save({ ...settings, hub: { ...settings.hub, defaultModel } });
 }

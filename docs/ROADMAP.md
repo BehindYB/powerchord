@@ -33,7 +33,7 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Chat sessions with local models, with streaming answers and reasoning output
 - Remaining: API keys for protected endpoints (OS secure storage)
 
-## Phase 4: Shared context hub (MCP)
+## Phase 4: Shared context hub (MCP) (done)
 
 - Extend PowerChord's local MCP server (already used for Claude Code permission prompts) with context tools: tasks, notes, plans, summaries, status
 - `ask_local_model`: lets agents such as Claude Code delegate work to local models

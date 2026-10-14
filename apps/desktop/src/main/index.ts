@@ -1,14 +1,18 @@
 import { join } from 'node:path';
+import { PowerChordMcpServer } from '@powerchord/core';
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron';
 import { IpcChannel, type AppInfo } from '../shared/ipc';
 import { registerAgentHandlers } from './agents';
+import { HubManager } from './hub';
 import { registerModelHandlers } from './models';
 import { SessionManager } from './sessions';
 
 const APP_USER_MODEL_ID = 'io.github.behindyb.powerchord';
 const TITLE_BAR_HEIGHT = 40;
 
-const sessions = new SessionManager();
+const mcp = new PowerChordMcpServer();
+const hub = new HubManager(mcp);
+const sessions = new SessionManager(mcp);
 
 // Must match the `--pc-bg` token in the renderer stylesheet.
 const BACKGROUND = { light: '#f7f7f8', dark: '#18181b' } as const;
@@ -101,7 +105,8 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(async () => {
     app.setAppUserModelId(APP_USER_MODEL_ID);
     registerIpcHandlers();
-    await sessions.start();
+    await hub.start();
+    sessions.start();
     createMainWindow();
 
     app.on('activate', () => {
@@ -115,7 +120,8 @@ if (!app.requestSingleInstanceLock()) {
     if (stopping) return;
     stopping = true;
     event.preventDefault();
-    void sessions.stop().finally(() => app.quit());
+    sessions.stop();
+    void mcp.stop().finally(() => app.quit());
   });
 
   app.on('window-all-closed', () => {

@@ -9,6 +9,7 @@ import type {
   SessionState,
   SessionStatus,
 } from '@powerchord/core/sessions';
+import type { HubNote, HubTask, TaskStatus } from '@powerchord/core/hub';
 
 export const IpcChannel = {
   GetAppInfo: 'app:get-info',
@@ -33,6 +34,16 @@ export const IpcChannel = {
   RemoveModelEndpoint: 'models:remove-endpoint',
   DiscoverModelServers: 'models:discover',
   DiscoveryProgress: 'models:discover-progress',
+  GetHub: 'hub:get',
+  HubChanged: 'hub:changed',
+  AddHubTask: 'hub:add-task',
+  UpdateHubTask: 'hub:update-task',
+  DeleteHubTask: 'hub:delete-task',
+  SaveHubNote: 'hub:save-note',
+  DeleteHubNote: 'hub:delete-note',
+  SetHubDefaultModel: 'hub:set-default-model',
+  RegisterHub: 'hub:register',
+  CopyHubConfig: 'hub:copy-config',
 } as const;
 
 export interface AppInfo {
@@ -158,6 +169,29 @@ export interface SessionEventMessage {
 
 export type OpenTarget = 'antigravity' | 'explorer';
 
+export type { HubNote, HubTask, TaskStatus };
+
+export interface HubConnection {
+  url: string;
+  port: number;
+  /** False when the preferred port was taken; agents registered earlier must be registered again. */
+  usedPreferredPort: boolean;
+  preferredPort: number;
+}
+
+export interface HubState {
+  tasks: HubTask[];
+  notes: HubNote[];
+  connection: HubConnection;
+  defaultModel: { endpointId: string; model: string } | null;
+}
+
+/** Agents PowerChord can register the hub in, using each agent's own MCP command. */
+export type HubRegistrationTarget = 'antigravity-cli' | 'claude-code';
+
+export type HubRegistrationOutcome =
+  { status: 'registered' } | { status: 'cancelled' } | { status: 'failed'; message: string };
+
 /** API exposed to the renderer as `window.powerchord` by the preload script. */
 export interface PowerChordApi {
   getAppInfo(): Promise<AppInfo>;
@@ -199,4 +233,20 @@ export interface PowerChordApi {
   /** Scans the user's private networks for model servers. Runs only when the user asks. */
   discoverModelServers(): Promise<DiscoveryResult>;
   onDiscoveryProgress(listener: (progress: DiscoveryProgress) => void): () => void;
+
+  getHub(): Promise<HubState>;
+  onHubChanged(listener: (state: Pick<HubState, 'tasks' | 'notes'>) => void): () => void;
+  addHubTask(task: { title: string; description: string }): Promise<void>;
+  updateHubTask(
+    id: string,
+    changes: { title?: string; description?: string; status?: TaskStatus; summary?: string | null },
+  ): Promise<void>;
+  deleteHubTask(id: string): Promise<void>;
+  saveHubNote(note: { id?: string; title: string; content: string }): Promise<void>;
+  deleteHubNote(id: string): Promise<void>;
+  setHubDefaultModel(model: { endpointId: string; model: string } | null): Promise<void>;
+  /** Confirms in a native dialog, then runs the agent's own `mcp add` command. */
+  registerHub(target: HubRegistrationTarget): Promise<HubRegistrationOutcome>;
+  /** Copies an MCP configuration snippet, including the hub token, to the clipboard. */
+  copyHubConfig(): Promise<void>;
 }

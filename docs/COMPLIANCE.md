@@ -43,7 +43,7 @@ The MCP server lets any agent, whether driven by PowerChord or used directly by 
 
 1. Tools expose and record shared context: tasks, notes, plans, summaries and status. The one exception is the permission prompt tool that PowerChord passes to Claude Code with `--permission-prompt-tool`, through which the user approves or denies Claude Code's actions. No tool returns instructions for an agent to execute next on PowerChord's behalf, and no tool is designed to be polled in a loop.
 2. PowerChord never triggers an agent it does not drive. Work in such an agent starts only from the user's own input in that agent's interface.
-3. The server listens only on local transports (stdio, or loopback HTTP with a per-install token). It is never exposed to the network.
+3. The server listens only on loopback HTTP and is never exposed to the network. Every client authenticates with a bearer token: each PowerChord-driven session gets its own, and agents the user registers the hub in share a per-install token kept in PowerChord's settings.
 4. Tool calls follow each agent's own approval settings; PowerChord does not ask users to auto-approve its tools.
 
 ## Network discovery

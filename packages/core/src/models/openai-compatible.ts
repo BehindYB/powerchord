@@ -126,7 +126,7 @@ function parseChunk(data: string): ChatStreamChunk[] {
 /** Streams a chat completion. */
 export async function* streamChat(
   endpoint: ModelEndpoint,
-  request: { model: string; messages: ChatMessage[] },
+  request: { model: string; messages: ChatMessage[]; maxTokens?: number },
   signal?: AbortSignal,
 ): AsyncGenerator<ChatStreamChunk> {
   const response = await fetch(url(endpoint, '/chat/completions'), {
@@ -137,6 +137,7 @@ export async function* streamChat(
       messages: request.messages,
       stream: true,
       stream_options: { include_usage: true },
+      ...(request.maxTokens ? { max_tokens: request.maxTokens } : {}),
     }),
     ...(signal ? { signal } : {}),
   });
@@ -150,4 +151,20 @@ export async function* streamChat(
     if (data === '[DONE]') return;
     yield* parseChunk(data);
   }
+}
+
+/** Runs a chat completion to the end and returns the answer text. */
+export async function completeChat(
+  endpoint: ModelEndpoint,
+  request: { model: string; messages: ChatMessage[]; maxTokens?: number },
+  signal?: AbortSignal,
+): Promise<{ text: string; usage: ChatUsage }> {
+  let text = '';
+  let usage: ChatUsage = { inputTokens: null, outputTokens: null };
+  // Streaming keeps long generations alive through proxies and lets callers cancel promptly.
+  for await (const chunk of streamChat(endpoint, request, signal)) {
+    if (chunk.type === 'text') text += chunk.text;
+    else if (chunk.type === 'usage') usage = chunk.usage;
+  }
+  return { text, usage };
 }

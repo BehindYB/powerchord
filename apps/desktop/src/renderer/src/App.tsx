@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AgentsView } from './components/AgentsView';
+import { HubView } from './components/HubView';
 import { ModelsView } from './components/ModelsView';
 import { NewSessionView } from './components/NewSessionView';
 import { SessionView } from './components/SessionView';
@@ -17,6 +18,8 @@ export function App() {
     content = <AgentsView />;
   } else if (view.kind === 'models') {
     content = <ModelsView />;
+  } else if (view.kind === 'hub') {
+    content = <HubView />;
   } else if (activeSession) {
     // Keyed by id so per-session view state resets when switching sessions.
     content = (

@@ -2,7 +2,11 @@ import type { SessionSummary } from '../../../shared/ipc';
 import { useAppInfo } from '../hooks/useAppInfo';
 
 export type View =
-  { kind: 'new' } | { kind: 'agents' } | { kind: 'models' } | { kind: 'session'; id: string };
+  | { kind: 'new' }
+  | { kind: 'agents' }
+  | { kind: 'models' }
+  | { kind: 'hub' }
+  | { kind: 'session'; id: string };
 
 interface SidebarProps {
   view: View;
@@ -99,6 +103,9 @@ export function Sidebar({ view, sessions, onNavigate }: SidebarProps) {
         </NavButton>
         <NavButton active={view.kind === 'models'} onClick={() => onNavigate({ kind: 'models' })}>
           Models
+        </NavButton>
+        <NavButton active={view.kind === 'hub'} onClick={() => onNavigate({ kind: 'hub' })}>
+          Hub
         </NavButton>
       </nav>
 

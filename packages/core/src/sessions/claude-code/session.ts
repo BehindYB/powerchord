@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   MCP_SERVER_NAME,
   PERMISSION_TOOL_NAME,
+  type McpClientHandlers,
   type McpClientRegistration,
   type PermissionDecision,
   type PermissionRequest,
@@ -31,6 +32,10 @@ export interface ClaudeCodeSessionOptions {
   onEvent: (event: SessionEvent) => void;
   /** Existing Claude Code session to resume instead of starting a new one. */
   resumeSessionId?: string;
+  /** Gives the session PowerChord's hub tools (shared tasks and notes, local models). */
+  hubTools?: boolean;
+  /** Author name recorded for hub changes made by this session. */
+  label?: string;
 }
 
 export type PermissionScope = 'once' | 'session';
@@ -44,6 +49,7 @@ export class ClaudeCodeSession {
   readonly agentSessionId: string;
   private readonly options: ClaudeCodeSessionOptions;
   private readonly registration: McpClientRegistration;
+  private readonly mcpHandlers: McpClientHandlers;
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private readonly toolsAllowedForSession = new Set<string>();
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -63,9 +69,17 @@ export class ClaudeCodeSession {
     this.hasConversation = options.resumeSessionId !== undefined;
     this.model = options.model;
     this.permissionMode = options.permissionMode;
-    this.registration = options.mcp.register({
+    this.mcpHandlers = {
+      label: options.label ?? 'Claude Code',
       requestPermission: (request) => this.requestPermission(request),
-    });
+      hub: options.hubTools ?? false,
+    };
+    this.registration = options.mcp.register(this.mcpHandlers);
+  }
+
+  /** Updates the author name recorded for this session's hub changes. */
+  setLabel(label: string): void {
+    this.mcpHandlers.label = label;
   }
 
   send(text: string): void {
@@ -139,7 +153,13 @@ export class ClaudeCodeSession {
 
   private buildArgs(): string[] {
     const mcpConfig = {
-      mcpServers: { [MCP_SERVER_NAME]: { type: 'http', url: this.registration.url } },
+      mcpServers: {
+        [MCP_SERVER_NAME]: {
+          type: 'http',
+          url: this.registration.url,
+          headers: this.registration.headers,
+        },
+      },
     };
     return [
       '-p',

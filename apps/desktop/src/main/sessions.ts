@@ -9,8 +9,8 @@ import {
   getAgent,
   ModelChatSession,
   openInTerminal,
-  PowerChordMcpServer,
   resolveSearchPath,
+  type PowerChordMcpServer,
   type PermissionMode,
   type SessionEvent,
   type SessionState,
@@ -30,6 +30,8 @@ import { findEndpoint } from './models';
 import { isFolderTrusted, trustFolder } from './settings';
 
 const TITLE_LENGTH = 60;
+/** Length of the session name recorded as the author of hub changes. */
+const LABEL_LENGTH = 32;
 
 interface ManagedSession {
   summary: SessionSummary;
@@ -63,26 +65,27 @@ function claudeSession(session: ManagedSession): ClaudeCodeSession {
   return session.agent;
 }
 
-function makeTitle(text: string): string {
+function makeTitle(text: string, length = TITLE_LENGTH): string {
   const singleLine = text.replace(/\s+/g, ' ').trim();
-  return singleLine.length > TITLE_LENGTH
-    ? `${singleLine.slice(0, TITLE_LENGTH - 1)}…`
-    : singleLine;
+  return singleLine.length > length ? `${singleLine.slice(0, length - 1)}…` : singleLine;
 }
 
 export class SessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
-  private readonly mcp = new PowerChordMcpServer();
+  private readonly mcp: PowerChordMcpServer;
 
-  async start(): Promise<void> {
-    await this.mcp.start();
+  /** The MCP server must be started before sessions are created. */
+  constructor(mcp: PowerChordMcpServer) {
+    this.mcp = mcp;
+  }
+
+  start(): void {
     this.registerHandlers();
   }
 
-  async stop(): Promise<void> {
+  stop(): void {
     for (const session of this.sessions.values()) session.agent.close();
     this.sessions.clear();
-    await this.mcp.stop();
   }
 
   private list(): SessionSummary[] {
@@ -171,6 +174,8 @@ export class SessionManager {
         mcp: this.mcp,
         model: request.model,
         permissionMode: request.permissionMode,
+        hubTools: true,
+        label: 'Claude Code',
         onEvent,
       });
     } else if (request.agentId === 'local-model') {
@@ -214,6 +219,9 @@ export class SessionManager {
     if (event.type === 'user-message' && session.summary.title === 'New session') {
       session.summary = { ...session.summary, title: makeTitle(event.text) || 'New session' };
       summaryChanged = true;
+      if (session.agent instanceof ClaudeCodeSession) {
+        session.agent.setLabel(`Claude Code: ${makeTitle(event.text, LABEL_LENGTH)}`);
+      }
     }
 
     const message: SessionEventMessage = { sessionId, seq: session.seq, event };

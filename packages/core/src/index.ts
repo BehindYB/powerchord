@@ -73,3 +73,15 @@ export {
   type ScannedNetwork,
 } from './models/discovery.ts';
 export { localInterfaceAddresses, readNeighborAddresses } from './models/network.ts';
+export { completeChat } from './models/openai-compatible.ts';
+export {
+  HubStore,
+  TASK_STATUSES,
+  type HubNote,
+  type HubSnapshot,
+  type HubTask,
+  type TaskStatus,
+} from './hub/store.ts';
+export type { HubContext, LocalModelGateway, LocalModelInfo } from './hub/tools.ts';
+export { createLocalModelGateway, type GatewayEndpoint } from './hub/local-models.ts';
+export { createToken, MCP_SERVER_NAME, type McpServerStartResult } from './mcp/server.ts';

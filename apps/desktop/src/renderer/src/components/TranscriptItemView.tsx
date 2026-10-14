@@ -8,6 +8,14 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 }
 
+/** Display name of a tool; MCP tools are named `mcp__<server>__<tool>`. */
+export function toolDisplayName(name: string): string {
+  const match = /^mcp__(.+?)__(.+)$/.exec(name);
+  if (!match) return name;
+  const [, server, tool] = match;
+  return server === 'powerchord' ? `Hub · ${tool}` : `${server} · ${tool}`;
+}
+
 /** One-line description of a tool call, based on the most telling input field. */
 export function describeToolInput(name: string, input: unknown): string {
   const fields = asRecord(input);
@@ -20,6 +28,8 @@ export function describeToolInput(name: string, input: unknown): string {
   };
   const summary =
     pick(
+      'prompt',
+      'title',
       'command',
       'file_path',
       'notebook_path',
@@ -50,7 +60,7 @@ function ToolCallView({ item }: { item: Extract<TranscriptItem, { kind: 'tool-ca
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >
         <span className={`h-2 w-2 shrink-0 rounded-full ${statusClass}`} />
-        <span className="font-medium">{item.name}</span>
+        <span className="font-medium">{toolDisplayName(item.name)}</span>
         <span className="min-w-0 truncate font-mono text-xs text-muted">
           {describeToolInput(item.name, item.input)}
         </span>
@@ -92,7 +102,9 @@ function PermissionView({
       }`}
     >
       <p className="font-medium">
-        {plan ? 'Claude proposes this plan' : `Claude wants to use ${item.toolName}`}
+        {plan
+          ? 'Claude proposes this plan'
+          : `Claude wants to use ${toolDisplayName(item.toolName)}`}
       </p>
       {plan ? (
         <div className="mt-2">
@@ -118,7 +130,7 @@ function PermissionView({
               onClick={() => onRespond('allow', 'session')}
               className="rounded-lg border border-border px-3 py-1.5 hover:bg-hover"
             >
-              Allow {item.toolName} for this session
+              Allow {toolDisplayName(item.toolName)} for this session
             </button>
           )}
           <button

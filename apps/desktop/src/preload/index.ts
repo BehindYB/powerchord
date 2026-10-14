@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
   IpcChannel,
   type DiscoveryProgress,
+  type HubState,
   type InstallOutputEvent,
   type PowerChordApi,
   type SessionEventMessage,
@@ -47,6 +48,18 @@ const api: PowerChordApi = {
   discoverModelServers: () => ipcRenderer.invoke(IpcChannel.DiscoverModelServers),
   onDiscoveryProgress: (listener) =>
     subscribe<DiscoveryProgress>(IpcChannel.DiscoveryProgress, listener),
+
+  getHub: () => ipcRenderer.invoke(IpcChannel.GetHub),
+  onHubChanged: (listener) =>
+    subscribe<Pick<HubState, 'tasks' | 'notes'>>(IpcChannel.HubChanged, listener),
+  addHubTask: (task) => ipcRenderer.invoke(IpcChannel.AddHubTask, task),
+  updateHubTask: (id, changes) => ipcRenderer.invoke(IpcChannel.UpdateHubTask, id, changes),
+  deleteHubTask: (id) => ipcRenderer.invoke(IpcChannel.DeleteHubTask, id),
+  saveHubNote: (note) => ipcRenderer.invoke(IpcChannel.SaveHubNote, note),
+  deleteHubNote: (id) => ipcRenderer.invoke(IpcChannel.DeleteHubNote, id),
+  setHubDefaultModel: (model) => ipcRenderer.invoke(IpcChannel.SetHubDefaultModel, model),
+  registerHub: (target) => ipcRenderer.invoke(IpcChannel.RegisterHub, target),
+  copyHubConfig: () => ipcRenderer.invoke(IpcChannel.CopyHubConfig),
 };
 
 contextBridge.exposeInMainWorld('powerchord', api);

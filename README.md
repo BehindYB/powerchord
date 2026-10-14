@@ -2,7 +2,7 @@
 
 A desktop workspace for AI coding agents and models. Run **Claude Code**, **OpenAI Codex**, **Gemini** and **local models** from a single interface, using the subscriptions and tools you already have.
 
-> **Status: pre-alpha.** Agent setup, Claude Code sessions (streaming, tool calls, permission prompts, plan usage) and local model chats with network discovery work. The shared MCP hub and more agents are next. See the [roadmap](docs/ROADMAP.md).
+> **Status: pre-alpha.** Agent setup, Claude Code sessions (streaming, tool calls, permission prompts, plan usage) local model chats with network discovery, and a shared MCP hub (tasks, notes, and delegation from agents to local models) work. Codex and Gemini are next. See the [roadmap](docs/ROADMAP.md).
 
 ## How it works
 
