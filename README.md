@@ -2,7 +2,7 @@
 
 A desktop workspace for AI coding agents and models. Run **Claude Code**, **OpenAI Codex**, **Gemini** and **local models** from a single interface, using the subscriptions and tools you already have.
 
-> **Status: pre-alpha.** Agent setup (detection, installation and sign-in) works; agent sessions are under active development. See the [roadmap](docs/ROADMAP.md).
+> **Status: pre-alpha.** Agent setup and Claude Code sessions work (streaming, tool calls, permission prompts, plan usage). Local models and more agents are next. See the [roadmap](docs/ROADMAP.md).
 
 ## How it works
 

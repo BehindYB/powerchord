@@ -24,7 +24,7 @@ Last reviewed: 2026-10-14. Re-check the referenced terms before changing an inte
 1. Agents are installed only from the vendor's official channels (official installer scripts, the vendor's npm packages, or WinGet/Homebrew packages published by the vendor).
 2. Every installation shows the exact command and requires explicit user confirmation. Installations run without administrator privileges.
 3. Agent binaries are never bundled with PowerChord, patched, or wrapped in a way that disables or alters their built-in authentication.
-4. For Claude, PowerChord runs the `claude` binary installed by the user.
+4. For Claude, PowerChord runs the `claude` binary installed by the user, through its documented print mode (`-p` with stream-json input and output), and never with `--bare` or other options that change how it authenticates. PowerChord does not depend on the Claude Agent SDK package, which bundles its own copy of the binary.
 5. Vendor agents whose consumer terms prohibit use from third-party applications (currently Antigravity CLI) are not integrated with consumer accounts.
 
 ## Agents PowerChord does not drive (Antigravity)
@@ -41,7 +41,7 @@ PowerChord never sends prompts to `agy`, runs it in headless or print mode, read
 
 The MCP server lets any agent, whether driven by PowerChord or used directly by the user, share context through PowerChord. It must remain a context-sharing service, not a control channel:
 
-1. Tools expose and record shared context: tasks, notes, plans, summaries and status. No tool returns instructions for an agent to execute next on PowerChord's behalf, and no tool is designed to be polled in a loop.
+1. Tools expose and record shared context: tasks, notes, plans, summaries and status. The one exception is the permission prompt tool that PowerChord passes to Claude Code with `--permission-prompt-tool`, through which the user approves or denies Claude Code's actions. No tool returns instructions for an agent to execute next on PowerChord's behalf, and no tool is designed to be polled in a loop.
 2. PowerChord never triggers an agent it does not drive. Work in such an agent starts only from the user's own input in that agent's interface.
 3. The server listens only on local transports (stdio, or loopback HTTP with a per-install token). It is never exposed to the network.
 4. Tool calls follow each agent's own approval settings; PowerChord does not ask users to auto-approve its tools.

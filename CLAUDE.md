@@ -18,7 +18,7 @@ Everything in this repository is written in English: code, identifiers, comments
   - `src/renderer` — React UI (Tailwind v4, tokens in `src/renderer/src/styles.css`)
   - `src/shared` — types shared between processes (IPC contract in `ipc.ts`)
 - `apps/cli` — `powerchord` command-line tool (`npm run cli -- doctor`), run from TypeScript sources by Node's type stripping
-- `packages/core` — `@powerchord/core`: agent catalog (official install channels), detection, installation, process helpers. Shipped as TypeScript sources; the desktop main process bundles it.
+- `packages/core` — `@powerchord/core`: agent catalog (official install channels), detection, installation, process helpers, the agent-neutral session model (`src/sessions`), the Claude Code adapter (`src/sessions/claude-code`) and the local MCP server (`src/mcp`). Shipped as TypeScript sources; the desktop main process bundles it. `@powerchord/core/sessions` is the browser-safe subset used by the renderer.
 - `docs` — roadmap and compliance rules
 
 ## Commands

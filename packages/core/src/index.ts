@@ -28,3 +28,29 @@ export {
 } from './system/run.ts';
 export { findExecutable, resolveSearchPath } from './system/search-path.ts';
 export { openInTerminal, type TerminalLaunchOptions } from './system/terminal.ts';
+export type {
+  PermissionBehavior,
+  PermissionMode,
+  SessionEvent,
+  SessionState,
+  SessionStatus,
+  TranscriptItem,
+  TurnSummary,
+  UsageLimits,
+  UsageWindow,
+} from './sessions/types.ts';
+export { createSessionState } from './sessions/types.ts';
+export { applySessionEvent } from './sessions/transcript.ts';
+export { ClaudeStreamParser } from './sessions/claude-code/parser.ts';
+export {
+  ClaudeCodeSession,
+  type ClaudeCodeSessionOptions,
+  type PermissionScope,
+} from './sessions/claude-code/session.ts';
+export {
+  PowerChordMcpServer,
+  type McpClientHandlers,
+  type McpClientRegistration,
+  type PermissionDecision,
+  type PermissionRequest,
+} from './mcp/server.ts';

@@ -17,7 +17,7 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - `powerchord` command-line tool exposing the same setup flow (`powerchord setup`, `powerchord doctor`)
 - Agents screen in the desktop app
 
-## Phase 2: Sessions with Claude Code
+## Phase 2: Sessions with Claude Code (done, except split view)
 
 - Agent process management in the main process
 - Unified event model: message streaming, reasoning, tool calls, permission requests, plans, usage

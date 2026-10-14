@@ -2,9 +2,12 @@ import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron';
 import { IpcChannel, type AppInfo } from '../shared/ipc';
 import { registerAgentHandlers } from './agents';
+import { SessionManager } from './sessions';
 
 const APP_USER_MODEL_ID = 'io.github.behindyb.powerchord';
 const TITLE_BAR_HEIGHT = 40;
+
+const sessions = new SessionManager();
 
 // Must match the `--pc-bg` token in the renderer stylesheet.
 const BACKGROUND = { light: '#f7f7f8', dark: '#18181b' } as const;
@@ -93,14 +96,24 @@ if (!app.requestSingleInstanceLock()) {
     window.focus();
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     app.setAppUserModelId(APP_USER_MODEL_ID);
     registerIpcHandlers();
+    await sessions.start();
     createMainWindow();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
     });
+  });
+
+  // Agent processes must not outlive the app.
+  let stopping = false;
+  app.on('before-quit', (event) => {
+    if (stopping) return;
+    stopping = true;
+    event.preventDefault();
+    void sessions.stop().finally(() => app.quit());
   });
 
   app.on('window-all-closed', () => {
