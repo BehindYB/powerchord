@@ -1,0 +1,71 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. `--pc-bg` must stay in sync with BACKGROUND in src/main/index.ts,
+ * which colors the native window controls overlay.
+ */
+:root {
+  color-scheme: light;
+  --pc-bg: #f7f7f8;
+  --pc-sidebar: #efeff1;
+  --pc-elevated: #ffffff;
+  --pc-hover: #e4e4e7;
+  --pc-border: #dcdce0;
+  --pc-text: #18181b;
+  --pc-muted: #71717a;
+  --pc-accent: #6d4aff;
+  --pc-accent-contrast: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --pc-bg: #18181b;
+    --pc-sidebar: #111113;
+    --pc-elevated: #222226;
+    --pc-hover: #2a2a2f;
+    --pc-border: #2e2e33;
+    --pc-text: #ececef;
+    --pc-muted: #9b9ba3;
+    --pc-accent: #8f75ff;
+    --pc-accent-contrast: #ffffff;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--pc-bg);
+  --color-sidebar: var(--pc-sidebar);
+  --color-elevated: var(--pc-elevated);
+  --color-hover: var(--pc-hover);
+  --color-border: var(--pc-border);
+  --color-text: var(--pc-text);
+  --color-muted: var(--pc-muted);
+  --color-accent: var(--pc-accent);
+  --color-accent-contrast: var(--pc-accent-contrast);
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+}
+
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}

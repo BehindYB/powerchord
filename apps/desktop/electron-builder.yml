@@ -1,0 +1,17 @@
+appId: io.github.behindyb.powerchord
+productName: PowerChord
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**/*
+  - package.json
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  perMachine: false
+mac:
+  target: dmg
+linux:
+  target: AppImage
