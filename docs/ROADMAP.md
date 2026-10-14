@@ -24,6 +24,7 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Session view: chat transcript, markdown and code rendering, tool call cards, permission prompts, working directory selection
 - First agent: Claude Code, running the user's installed `claude` binary
 - Multiple concurrent sessions, each with its own agent, model and working directory, with a split view to follow them side by side
+- "Open in" actions for a session's working directory: Antigravity (desktop app, or `agy` in the system terminal), editor, terminal. PowerChord only launches these tools and never drives them.
 
 ## Phase 3: Codex
 
