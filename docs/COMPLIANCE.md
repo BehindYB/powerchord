@@ -27,7 +27,8 @@ Last reviewed: 2026-10-14. Re-check the referenced terms before changing an inte
 4. For Claude, PowerChord runs the `claude` binary installed by the user, through its documented print mode (`-p` with stream-json input and output), and never with `--bare` or other options that change how it authenticates. PowerChord does not depend on the Claude Agent SDK package, which bundles its own copy of the binary.
 5. For Codex, PowerChord runs the `codex` binary installed by the user through its documented app-server protocol (`codex app-server`). Codex authenticates with the account the user signed in with `codex login`; PowerChord only reads whether an account is present (`account/read`).
 6. For Gemini CLI, PowerChord runs the `gemini` binary installed by the user in its documented Agent Client Protocol mode (`gemini --acp`) and selects the `gemini-api-key` authentication method the agent advertises, with the user's key in `GEMINI_API_KEY`. Gemini CLI records the selected method in its own settings, as it does when the user chooses it interactively.
-7. Vendor agents whose consumer terms prohibit use from third-party applications (currently Antigravity CLI) are not integrated with consumer accounts.
+7. Claude Code sessions billed to the user's Anthropic API key run the same binary with `ANTHROPIC_API_KEY` and a separate `CLAUDE_CONFIG_DIR` inside PowerChord's data folder. A signed-in Claude Code keeps using the subscription even when the key is set, so the separate folder, which has no login, is what makes the key take effect. PowerChord never reads that folder.
+8. Vendor agents whose consumer terms prohibit use from third-party applications (currently Antigravity CLI) are not integrated with consumer accounts.
 
 ## Agents PowerChord does not drive (Antigravity)
 
@@ -57,6 +58,12 @@ PowerChord can look for model servers (Ollama, LM Studio, llama.cpp, vLLM and si
 3. Small networks (/22 or smaller) are probed completely; larger ones only at likely addresses: hosts in the system neighbor table, the first addresses of the range, and the /24 around this machine. The total is capped at 4096 hosts.
 4. Only the default ports of known inference servers are tried, with a short TCP connect followed by a single `GET /v1/models`. Nothing else is sent, and nothing is stored except endpoints the user chooses to add.
 5. The interface tells users to scan only networks they are allowed to scan.
+
+## Pay-as-you-go APIs
+
+1. API chats call each provider's public API (Anthropic Messages, OpenAI, Gemini's OpenAI-compatible endpoint) with the key the user entered, never with subscription credentials.
+2. Costs shown in PowerChord are estimates from the providers' published list prices, recorded with a review date in `packages/core/src/models/pricing.ts`. The interface says so wherever it shows them; providers bill by their own records.
+3. PowerChord asks before sending a message past a monthly budget or above the user's per-message threshold. It never sends requests the user did not start.
 
 ## Usage
 

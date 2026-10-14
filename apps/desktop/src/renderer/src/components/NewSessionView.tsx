@@ -1,15 +1,19 @@
 import type { PermissionMode } from '@powerchord/core/sessions';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
+  API_PROVIDERS,
   CLAUDE_MODELS,
   CODEX_MODE_OPTIONS,
   PERMISSION_MODES,
   SESSION_AGENT_NAMES,
+  type ApiProviderId,
+  type ClaudeBilling,
   type CodingAgentId,
   type CreateSessionRequest,
   type SessionAgentId,
 } from '../../../shared/ipc';
 import { useAgents } from '../hooks/useAgents';
+import { formatUsd, useApiKeys, useApiModels } from '../hooks/useApi';
 import { useModelEndpoints } from '../hooks/useModelEndpoints';
 import { Composer, Picker } from './Composer';
 
@@ -25,6 +29,12 @@ const AGENT_CHOICES: readonly SessionAgentId[] = [
   'codex',
   'gemini-cli',
   'local-model',
+  'api-model',
+];
+
+const BILLING_OPTIONS: readonly { id: ClaudeBilling; label: string }[] = [
+  { id: 'subscription', label: 'Subscription' },
+  { id: 'api', label: 'API key' },
 ];
 
 function LinkButton({ onClick, children }: { onClick: () => void; children: string }) {
@@ -35,21 +45,6 @@ function LinkButton({ onClick, children }: { onClick: () => void; children: stri
   );
 }
 
-function useGeminiKeyConfigured(): boolean | null {
-  const [configured, setConfigured] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void window.powerchord.listApiKeys().then((keys) => {
-      if (!cancelled)
-        setConfigured(keys.some((key) => key.provider === 'gemini' && key.configured));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  return configured;
-}
-
 export function NewSessionView({
   onCreated,
   onOpenAgents,
@@ -58,7 +53,11 @@ export function NewSessionView({
 }: NewSessionViewProps) {
   const { agents } = useAgents();
   const { endpoints } = useModelEndpoints();
-  const geminiKey = useGeminiKeyConfigured();
+  const apiKeys = useApiKeys();
+  const configuredProviders = API_PROVIDERS.filter((provider) =>
+    apiKeys?.some((key) => key.provider === provider.id && key.configured),
+  );
+  const hasKey = (id: ApiProviderId) => configuredProviders.some((entry) => entry.id === id);
   const onlineEndpoints =
     endpoints?.filter((endpoint) => endpoint.online && endpoint.models.length > 0) ?? [];
 
@@ -69,9 +68,22 @@ export function NewSessionView({
   const [codexMode, setCodexMode] = useState<string>('auto');
   const [endpointId, setEndpointId] = useState<string | null>(null);
   const [localModel, setLocalModel] = useState<string | null>(null);
+  const [billing, setBilling] = useState<ClaudeBilling>('subscription');
+  const [providerChoice, setProviderChoice] = useState<ApiProviderId | null>(null);
+  const [apiModelChoice, setApiModelChoice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const isCodingAgent = agentId !== 'local-model';
+  const isCodingAgent = agentId !== 'local-model' && agentId !== 'api-model';
+  const provider =
+    providerChoice && hasKey(providerChoice)
+      ? providerChoice
+      : (configuredProviders[0]?.id ?? null);
+  const { models: apiModels, error: apiModelsError } = useApiModels(
+    agentId === 'api-model' ? provider : null,
+  );
+  const apiModel =
+    apiModels?.find((entry) => entry.id === apiModelChoice) ?? apiModels?.[0] ?? null;
+  const claudeBilling: ClaudeBilling = hasKey('anthropic') ? billing : 'subscription';
   const agent = isCodingAgent ? agents?.find((entry) => entry.id === agentId) : undefined;
   const agentName = SESSION_AGENT_NAMES[agentId];
   const endpoint = onlineEndpoints.find((entry) => entry.id === endpointId) ?? onlineEndpoints[0];
@@ -80,9 +92,15 @@ export function NewSessionView({
       ? localModel
       : endpoint?.models[0];
 
-  const ready = isCodingAgent
-    ? agent?.installed === true && cwd !== null && (agentId !== 'gemini-cli' || geminiKey === true)
-    : Boolean(endpoint && model);
+  let ready: boolean;
+  if (isCodingAgent) {
+    ready =
+      agent?.installed === true && cwd !== null && (agentId !== 'gemini-cli' || hasKey('gemini'));
+  } else if (agentId === 'api-model') {
+    ready = apiModel !== null;
+  } else {
+    ready = Boolean(endpoint && model);
+  }
 
   const chooseFolder = async () => {
     const folder = await window.powerchord.chooseWorkingDirectory();
@@ -93,8 +111,13 @@ export function NewSessionView({
     if (agentId === 'local-model') {
       return endpoint && model ? { agentId, endpointId: endpoint.id, model } : null;
     }
+    if (agentId === 'api-model') {
+      return provider && apiModel ? { agentId, provider, model: apiModel.id } : null;
+    }
     if (!cwd) return null;
-    if (agentId === 'claude-code') return { agentId, cwd, model: claudeModel, permissionMode };
+    if (agentId === 'claude-code') {
+      return { agentId, cwd, model: claudeModel, permissionMode, billing: claudeBilling };
+    }
     if (agentId === 'codex') return { agentId, cwd, model: null, permissionMode: codexMode };
     return { agentId, cwd, model: null, permissionMode: null };
   };
@@ -113,10 +136,14 @@ export function NewSessionView({
   };
 
   let placeholder: string;
-  if (!ready) {
-    placeholder = isCodingAgent ? 'Choose a folder to start' : 'Add a model server to start';
-  } else {
+  if (ready) {
     placeholder = isCodingAgent ? `Describe a task for ${agentName}` : 'Message the model';
+  } else if (isCodingAgent) {
+    placeholder = 'Choose a folder to start';
+  } else if (agentId === 'api-model') {
+    placeholder = configuredProviders.length > 0 ? 'Loading models…' : 'Add an API key to start';
+  } else {
+    placeholder = 'Add a model server to start';
   }
 
   return (
@@ -160,16 +187,39 @@ export function NewSessionView({
             {agentName} is not signed in. <LinkButton onClick={onOpenAgents}>Sign in</LinkButton>.
           </p>
         )}
-        {agentId === 'gemini-cli' && geminiKey === false && (
+        {agentId === 'gemini-cli' && apiKeys && !hasKey('gemini') && (
           <p className="mb-3 text-sm text-muted">
             Gemini CLI runs with your Gemini API key.{' '}
             <LinkButton onClick={onOpenSettings}>Add a key</LinkButton>.
           </p>
         )}
-        {agentId === 'gemini-cli' && geminiKey && (
+        {agentId === 'gemini-cli' && hasKey('gemini') && (
           <p className="mb-3 text-xs text-muted">
             Usage is billed by Google to the project of your API key, within its free tier or
             credits.
+          </p>
+        )}
+        {agentId === 'claude-code' && claudeBilling === 'api' && (
+          <p className="mb-3 text-xs text-muted">
+            Claude Code runs with your Anthropic API key instead of your plan, billed by Anthropic
+            to your API account. It uses a separate Claude Code profile, so your personal Claude
+            Code settings, memory and MCP servers are not loaded.
+          </p>
+        )}
+        {agentId === 'api-model' && apiKeys && configuredProviders.length === 0 && (
+          <p className="mb-3 text-sm text-muted">
+            Chat with models billed to your own API account.{' '}
+            <LinkButton onClick={onOpenSettings}>Add an API key</LinkButton>.
+          </p>
+        )}
+        {agentId === 'api-model' && apiModelsError && (
+          <p className="mb-3 text-sm text-red-500">{apiModelsError}</p>
+        )}
+        {agentId === 'api-model' && apiModel && (
+          <p className="mb-3 text-xs text-muted">
+            {apiModel.price
+              ? `List price ${formatUsd(apiModel.price.input)} input and ${formatUsd(apiModel.price.output)} output per million tokens, billed by the provider.`
+              : 'PowerChord does not know the price of this model; spending estimates leave it out.'}
           </p>
         )}
         {agentId === 'local-model' && endpoints && onlineEndpoints.length === 0 && (
@@ -180,6 +230,33 @@ export function NewSessionView({
         )}
 
         <Composer placeholder={placeholder} disabled={!ready} onSubmit={start}>
+          {agentId === 'claude-code' && hasKey('anthropic') && (
+            <Picker<ClaudeBilling>
+              label="Billing"
+              value={claudeBilling}
+              options={BILLING_OPTIONS}
+              onChange={setBilling}
+            />
+          )}
+          {agentId === 'api-model' && provider && (
+            <Picker<ApiProviderId>
+              label="Provider"
+              value={provider}
+              options={configuredProviders.map((entry) => ({ id: entry.id, label: entry.name }))}
+              onChange={(value) => {
+                setProviderChoice(value);
+                setApiModelChoice(null);
+              }}
+            />
+          )}
+          {agentId === 'api-model' && apiModels && apiModel && (
+            <Picker
+              label="Model"
+              value={apiModel.id}
+              options={apiModels.map((entry) => ({ id: entry.id, label: entry.label }))}
+              onChange={setApiModelChoice}
+            />
+          )}
           <AgentPickers
             agentId={agentId}
             claudeModel={claudeModel}
@@ -221,7 +298,8 @@ function AgentPickers(props: {
   codexMode: string;
   onCodexMode: (mode: string) => void;
 }) {
-  const agentId: CodingAgentId | null = props.agentId === 'local-model' ? null : props.agentId;
+  const agentId: CodingAgentId | null =
+    props.agentId === 'local-model' || props.agentId === 'api-model' ? null : props.agentId;
   if (agentId === 'claude-code') {
     return (
       <>

@@ -4,10 +4,12 @@ import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron';
 import { IpcChannel, type AppInfo } from '../shared/ipc';
 import { registerAgentHandlers } from './agents';
 import { registerApiKeyHandlers } from './api-keys';
+import { registerApiModelHandlers } from './api-models';
 import { HubManager } from './hub';
 import { registerModelHandlers } from './models';
 import { applySavedTheme, registerPreferenceHandlers } from './preferences';
 import { SessionManager } from './sessions';
+import { registerUsageHandlers } from './usage';
 
 const APP_USER_MODEL_ID = 'io.github.behindyb.powerchord';
 const TITLE_BAR_HEIGHT = 40;
@@ -96,6 +98,8 @@ function registerIpcHandlers(): void {
   registerModelHandlers();
   registerPreferenceHandlers(hub);
   registerApiKeyHandlers();
+  registerApiModelHandlers();
+  registerUsageHandlers();
 }
 
 if (!app.requestSingleInstanceLock()) {

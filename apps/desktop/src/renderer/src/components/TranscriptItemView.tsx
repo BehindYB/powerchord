@@ -289,6 +289,10 @@ function QuestionView({
   );
 }
 
+function formatCost(amount: number): string {
+  return amount < 0.01 ? `$${amount.toFixed(4)}` : `$${amount.toFixed(2)}`;
+}
+
 function formatDuration(ms: number): string {
   return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 60_000)} min`;
 }
@@ -296,11 +300,14 @@ function formatDuration(ms: number): string {
 export function TranscriptItemView({
   item,
   agentName,
+  showCost,
   onRespond,
   onAnswer,
 }: {
   item: TranscriptItem;
   agentName: string;
+  /** Whether turns are billed per use; plan sessions report costs that are not charged. */
+  showCost: boolean;
   onRespond: (requestId: string, behavior: PermissionBehavior, scope: 'once' | 'session') => void;
   onAnswer: (requestId: string, answers: QuestionAnswers) => void;
 }) {
@@ -356,6 +363,9 @@ export function TranscriptItemView({
         item.summary.durationMs !== null ? formatDuration(item.summary.durationMs) : null,
         item.summary.outputTokens !== null
           ? `${item.summary.outputTokens.toLocaleString()} output tokens`
+          : null,
+        showCost && item.summary.costUsd !== null && item.summary.costUsd > 0
+          ? `≈ ${formatCost(item.summary.costUsd)}`
           : null,
       ].filter(Boolean);
       return parts.length > 0 ? <p className="text-xs text-muted">{parts.join(' · ')}</p> : null;

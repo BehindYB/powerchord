@@ -55,6 +55,10 @@ export const IpcChannel = {
   ListApiKeys: 'api-keys:list',
   SetApiKey: 'api-keys:set',
   DeleteApiKey: 'api-keys:delete',
+  ListApiModels: 'api:list-models',
+  GetUsage: 'usage:get',
+  SetBudgets: 'usage:set-budgets',
+  UsageChanged: 'usage:changed',
 } as const;
 
 export interface AppInfo {
@@ -98,17 +102,21 @@ export interface InstallOutputEvent {
 }
 
 /** Agents that PowerChord can run sessions with. */
-export type SessionAgentId = 'claude-code' | 'codex' | 'gemini-cli' | 'local-model';
+export type SessionAgentId = 'claude-code' | 'codex' | 'gemini-cli' | 'local-model' | 'api-model';
 
 /** Agents that work in a folder on the user's computer. */
-export type CodingAgentId = Exclude<SessionAgentId, 'local-model'>;
+export type CodingAgentId = Exclude<SessionAgentId, 'local-model' | 'api-model'>;
 
 export const SESSION_AGENT_NAMES: Record<SessionAgentId, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   'gemini-cli': 'Gemini CLI',
   'local-model': 'Local model',
+  'api-model': 'API model',
 };
+
+/** How a Claude Code session is paid for: the user's plan or their Anthropic API key. */
+export type ClaudeBilling = 'subscription' | 'api';
 
 export interface ModelOption {
   /** Value passed to the agent; null selects the agent's default model. */
@@ -161,6 +169,8 @@ export interface SessionSummary {
   cwd: string | null;
   /** Model endpoint of a local model chat. */
   endpointId: string | null;
+  /** Provider billed for the session: API model chats, and Claude Code sessions on an API key. */
+  provider: ApiProviderId | null;
   status: SessionStatus;
   model: string | null;
   /** Agent-specific mode, such as a Claude Code permission mode; null for agents without modes. */
@@ -178,10 +188,48 @@ export interface SessionSnapshot {
 }
 
 export type CreateSessionRequest =
-  | { agentId: 'claude-code'; cwd: string; model: string | null; permissionMode: PermissionMode }
+  | {
+      agentId: 'claude-code';
+      cwd: string;
+      model: string | null;
+      permissionMode: PermissionMode;
+      billing: ClaudeBilling;
+    }
   | { agentId: 'codex'; cwd: string; model: string | null; permissionMode: string }
   | { agentId: 'gemini-cli'; cwd: string; model: string | null; permissionMode: string | null }
-  | { agentId: 'local-model'; endpointId: string; model: string };
+  | { agentId: 'local-model'; endpointId: string; model: string }
+  | { agentId: 'api-model'; provider: ApiProviderId; model: string };
+
+export interface ApiModelInfo {
+  id: string;
+  label: string;
+  /** List price in USD per million tokens; null when PowerChord does not know it. */
+  price: { input: number; output: number } | null;
+}
+
+export interface ProviderUsage {
+  /** Estimated spend this calendar month, in USD. */
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  requests: number;
+}
+
+export interface UsageOverview {
+  /** Calendar month, for example "2026-10". */
+  month: string;
+  providers: Partial<Record<ApiProviderId, ProviderUsage>>;
+  budgets: Budgets;
+  /** Date the built-in price list was checked against the providers' pages. */
+  pricesReviewed: string;
+}
+
+export interface Budgets {
+  /** Monthly spending limits in USD; a message past the limit needs confirmation. */
+  monthlyUsd: Partial<Record<ApiProviderId, number>>;
+  /** Messages estimated to cost more than this need confirmation. */
+  confirmAboveUsd: number;
+}
 
 export interface ModelEndpointInfo {
   id: string;
@@ -300,6 +348,10 @@ export interface PowerChordApi {
   searchSessions(query: string): Promise<string[]>;
   createSession(request: CreateSessionRequest): Promise<SessionSummary>;
   getSession(sessionId: string): Promise<SessionSnapshot | null>;
+  /**
+   * Sends a message. Pay-as-you-go sessions may first ask the user to confirm the estimated cost
+   * in a native dialog; a declined message is rejected with an error.
+   */
   sendMessage(sessionId: string, text: string): Promise<void>;
   interruptSession(sessionId: string): Promise<void>;
   respondToPermission(
@@ -322,7 +374,7 @@ export interface PowerChordApi {
   /** Saved model endpoints, each checked for availability. */
   listModelEndpoints(): Promise<ModelEndpointInfo[]>;
   /** Verifies that the address serves an OpenAI-compatible API, then saves it. */
-  addModelEndpoint(baseUrl: string, name?: string): Promise<ModelEndpointInfo>;
+  addModelEndpoint(baseUrl: string, name?: string, apiKey?: string): Promise<ModelEndpointInfo>;
   removeModelEndpoint(endpointId: string): Promise<void>;
   /** Scans the user's private networks for model servers. Runs only when the user asks. */
   discoverModelServers(): Promise<DiscoveryResult>;
@@ -355,4 +407,9 @@ export interface PowerChordApi {
   /** Checks the key with the provider, then stores it encrypted. */
   setApiKey(provider: ApiProviderId, key: string): Promise<void>;
   deleteApiKey(provider: ApiProviderId): Promise<void>;
+  /** Chat models of a provider whose key is configured. */
+  listApiModels(provider: ApiProviderId): Promise<ApiModelInfo[]>;
+  getUsage(): Promise<UsageOverview>;
+  setBudgets(budgets: Budgets): Promise<void>;
+  onUsageChanged(listener: (usage: UsageOverview) => void): () => void;
 }

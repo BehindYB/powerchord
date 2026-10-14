@@ -22,7 +22,7 @@ import {
   type HubRegistrationTarget,
   type HubState,
 } from '../shared/ipc';
-import { findEndpoint } from './models';
+import { endpointConnection, findEndpoint } from './models';
 import {
   getHubSettings,
   getModelEndpoints,
@@ -79,7 +79,12 @@ export class HubManager {
       store: this.store,
       models: createLocalModelGateway({
         endpoints: async () =>
-          (await getModelEndpoints()).map(({ name, baseUrl }) => ({ name, baseUrl })),
+          Promise.all(
+            (await getModelEndpoints()).map(async (endpoint) => ({
+              name: endpoint.name,
+              ...(await endpointConnection(endpoint)),
+            })),
+          ),
         defaultModel: async () => {
           const preferred = this.settings?.defaultModel;
           const endpoint = preferred ? await findEndpoint(preferred.endpointId) : undefined;

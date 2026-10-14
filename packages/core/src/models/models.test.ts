@@ -46,6 +46,32 @@ describe('OpenAI-compatible client', () => {
   });
 });
 
+describe('protected endpoints', () => {
+  it('send the key as a bearer token and explain rejections', async () => {
+    server = await startFakeModelServer({ apiKey: 'secret-key' });
+    await expect(listModels({ baseUrl: server.baseUrl })).rejects.toThrow(
+      /401 Unauthorized: Invalid API key/,
+    );
+    expect(await listModels({ baseUrl: server.baseUrl, apiKey: 'secret-key' })).toHaveLength(2);
+  });
+
+  it('estimate the cost of priced turns', async () => {
+    server = await startFakeModelServer();
+    const events: SessionEvent[] = [];
+    const session = new ModelChatSession({
+      endpoint: { baseUrl: server.baseUrl },
+      model: 'qwen3:0.6b',
+      priceFor: () => ({ input: 1, output: 2 }),
+      onEvent: (event) => events.push(event),
+    });
+    session.send('Hello');
+    await expect.poll(() => events.some((event) => event.type === 'turn-complete')).toBe(true);
+    const turn = events.find((event) => event.type === 'turn-complete');
+    expect(turn?.type === 'turn-complete' && turn.summary.costUsd).toBeCloseTo(16 / 1_000_000);
+    session.close();
+  });
+});
+
 describe('ModelChatSession', () => {
   function collect(): { events: SessionEvent[]; state: () => SessionState } {
     const events: SessionEvent[] = [];

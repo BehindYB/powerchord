@@ -1,4 +1,5 @@
-// Starts the fake model server for manual and end-to-end testing: node serve-fake-model.ts [port]
+// Starts the fake model server for manual and end-to-end testing:
+// node serve-fake-model.ts [port] [api key]
 import { startFakeModelServer } from './fake-model-server.ts';
 
 const port = Number(process.argv[2] ?? 11434);
@@ -13,5 +14,6 @@ const server = await startFakeModelServer({
     '3. llama.cpp\n',
   ],
   chunkDelayMs: 120,
+  ...(process.argv[3] ? { apiKey: process.argv[3] } : {}),
 });
 console.log(`Fake model server listening at ${server.baseUrl}`);

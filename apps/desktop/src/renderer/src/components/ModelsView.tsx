@@ -8,6 +8,7 @@ const BUTTON =
 export function ModelsView() {
   const { endpoints, loading, refresh } = useModelEndpoints();
   const [address, setAddress] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [scan, setScan] = useState<DiscoveryResult | null>(null);
@@ -16,12 +17,13 @@ export function ModelsView() {
 
   useEffect(() => window.powerchord.onDiscoveryProgress(setProgress), []);
 
-  const add = async (baseUrl: string, name?: string) => {
+  const add = async (baseUrl: string, name?: string, key?: string) => {
     setAdding(true);
     setMessage(null);
     try {
-      await window.powerchord.addModelEndpoint(baseUrl, name);
+      await window.powerchord.addModelEndpoint(baseUrl, name, key);
       setAddress('');
+      setApiKey('');
       await refresh();
       setScan(
         (current) =>
@@ -103,17 +105,28 @@ export function ModelsView() {
 
         <h2 className="mt-8 mb-2 text-sm font-semibold">Add a server</h2>
         <form
-          className="flex gap-2"
+          className="flex flex-wrap gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            if (address.trim()) void add(address);
+            if (address.trim()) void add(address, undefined, apiKey.trim() || undefined);
           }}
         >
           <input
             value={address}
             onChange={(event) => setAddress(event.target.value)}
             placeholder="10.0.0.5:11434 or http://host:1234/v1"
-            className="min-w-0 flex-1 rounded-lg border border-border bg-elevated px-3 py-1.5 text-sm select-text"
+            aria-label="Server address"
+            className="min-w-48 flex-[2] rounded-lg border border-border bg-elevated px-3 py-1.5 text-sm select-text"
+          />
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="API key, if the server needs one"
+            aria-label="Server API key"
+            className="min-w-48 flex-1 rounded-lg border border-border bg-elevated px-3 py-1.5 font-mono text-sm select-text"
           />
           <button type="submit" disabled={adding || !address.trim()} className={BUTTON}>
             Add

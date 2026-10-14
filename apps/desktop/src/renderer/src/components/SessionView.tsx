@@ -10,9 +10,12 @@ import {
   CODEX_MODE_OPTIONS,
   PERMISSION_MODES,
   SESSION_AGENT_NAMES,
+  API_PROVIDERS,
+  type ApiModelInfo,
   type ModelOption,
   type SessionSummary,
 } from '../../../shared/ipc';
+import { formatUsd, useApiModels, useUsage } from '../hooks/useApi';
 import { useModelEndpoints } from '../hooks/useModelEndpoints';
 import { useSessionState } from '../hooks/useSessions';
 import { Composer, Picker } from './Composer';
@@ -43,8 +46,16 @@ function modelOptions(
   summary: SessionSummary,
   state: SessionState | null,
   localModels: string[],
+  apiModels: ApiModelInfo[] | null,
 ): readonly ModelOption[] {
   if (summary.agentId === 'claude-code') return CLAUDE_MODELS;
+  if (summary.agentId === 'api-model') {
+    const options: ModelOption[] = (apiModels ?? []).map(({ id, label }) => ({ id, label }));
+    if (summary.model && !options.some((option) => option.id === summary.model)) {
+      options.unshift({ id: summary.model, label: summary.model });
+    }
+    return options;
+  }
   if (summary.agentId === 'local-model')
     return localModels.map((name) => ({ id: name, label: name }));
   const reported = state?.availableModels ?? [];
@@ -72,6 +83,34 @@ function modeOptions(
     : null;
 }
 
+/** Estimated spend of this session and of its provider this month. */
+function CostPill({ summary, state }: { summary: SessionSummary; state: SessionState | null }) {
+  const usage = useUsage();
+  const provider = summary.provider;
+  if (!provider) return null;
+  const sessionCost = (state?.items ?? []).reduce(
+    (total, item) => total + (item.kind === 'turn-end' ? (item.summary.costUsd ?? 0) : 0),
+    0,
+  );
+  const month = usage?.providers[provider]?.costUsd ?? 0;
+  const budget = usage?.budgets.monthlyUsd[provider];
+  const name = API_PROVIDERS.find((entry) => entry.id === provider)?.name ?? provider;
+  const over = budget !== undefined && month >= budget;
+  return (
+    <span
+      title={`Estimated from list prices. ${name} this month: ${formatUsd(month)}${
+        budget !== undefined ? ` of ${formatUsd(budget)}` : ''
+      }.`}
+      className={`rounded-full px-2 py-0.5 text-xs whitespace-nowrap ${
+        over ? 'bg-red-500/15 text-red-500' : 'bg-hover text-muted'
+      }`}
+    >
+      ≈ {formatUsd(sessionCost)} · month {formatUsd(month)}
+      {budget !== undefined ? ` / ${formatUsd(budget)}` : ''}
+    </span>
+  );
+}
+
 export function SessionView({
   summary,
   focused,
@@ -89,11 +128,17 @@ export function SessionView({
 }) {
   const state = useSessionState(summary.id);
   const { endpoints } = useModelEndpoints();
-  const isLocal = summary.agentId === 'local-model';
+  const isLocal = summary.agentId === 'local-model' || summary.agentId === 'api-model';
+  const { models: apiModels } = useApiModels(
+    summary.agentId === 'api-model' ? summary.provider : null,
+  );
   const endpoint = endpoints?.find((entry) => entry.id === summary.endpointId);
-  const agentLabel = isLocal
-    ? (endpoint?.name ?? 'Local model')
-    : SESSION_AGENT_NAMES[summary.agentId];
+  const agentLabel =
+    summary.agentId === 'api-model'
+      ? (API_PROVIDERS.find((entry) => entry.id === summary.provider)?.name ?? 'API model')
+      : summary.agentId === 'local-model'
+        ? (endpoint?.name ?? 'Local model')
+        : SESSION_AGENT_NAMES[summary.agentId];
   const mode = modeOptions(summary, state);
   const localModels = endpoint?.models.length
     ? endpoint.models
@@ -152,7 +197,8 @@ export function SessionView({
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {state?.usageLimits && <UsagePill limits={state.usageLimits} />}
+          <CostPill summary={summary} state={state} />
+          {state?.usageLimits && !summary.provider && <UsagePill limits={state.usageLimits} />}
           {summary.cwd !== null && (
             <>
               <button
@@ -213,6 +259,7 @@ export function SessionView({
               key={item.id}
               item={item}
               agentName={agentLabel}
+              showCost={summary.provider !== null}
               onRespond={respond}
               onAnswer={answer}
             />
@@ -235,7 +282,7 @@ export function SessionView({
             <Picker
               label="Model"
               value={summary.model}
-              options={modelOptions(summary, state, localModels)}
+              options={modelOptions(summary, state, localModels, apiModels)}
               onChange={(model) =>
                 void run(window.powerchord.updateSessionSettings(summary.id, { model }))
               }

@@ -1,14 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import { stat } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   AcpSession,
   applySessionEvent,
+  approximateTokens,
   buildChildEnv,
   chatHistoryFromTranscript,
   ClaudeCodeSession,
   CodexSession,
   createSessionState,
   detectAgent,
+  estimateCost,
+  findPrice,
   getAgent,
   isCodexMode,
   ModelChatSession,
@@ -23,12 +27,13 @@ import {
   type SessionEvent,
   type SessionState,
 } from '@powerchord/core';
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import {
   CLAUDE_MODELS,
   IpcChannel,
   PERMISSION_MODES,
   SESSION_AGENT_NAMES,
+  type ApiProviderId,
   type CodingAgentId,
   type CreateSessionRequest,
   type OpenTarget,
@@ -37,9 +42,11 @@ import {
   type SessionSummary,
 } from '../shared/ipc';
 import { getApiKey } from './api-keys';
-import { findEndpoint } from './models';
+import { PROVIDER_APIS, providerConnection, providerName } from './api-models';
+import { endpointConnection, findEndpoint } from './models';
 import { SessionStore } from './session-store';
-import { isFolderTrusted, trustFolder } from './settings';
+import { getBudgets, isFolderTrusted, trustFolder } from './settings';
+import { monthSpend, recordUsage } from './usage';
 
 const TITLE_LENGTH = 60;
 /** Length of the session name recorded as the author of hub changes. */
@@ -82,6 +89,19 @@ function isOptionalModelName(value: unknown): value is string | null {
 /** Modes are validated by the agents; Gemini CLI reports its own. */
 function isModeName(value: unknown): value is string {
   return typeof value === 'string' && /^[\w.-]{1,64}$/.test(value);
+}
+
+function isApiProvider(value: unknown): value is ApiProviderId {
+  return value === 'gemini' || value === 'openai' || value === 'anthropic';
+}
+
+/** Output assumed for a reply when estimating a message's cost before it is sent. */
+const ESTIMATED_OUTPUT_TOKENS = 1000;
+/** Claude Code adds its system prompt and tool definitions to every request. */
+const AGENT_CONTEXT_TOKENS = 20_000;
+
+function formatUsd(amount: number): string {
+  return amount < 0.01 ? `$${amount.toFixed(4)}` : `$${amount.toFixed(2)}`;
 }
 
 function isCodingAgent(agentId: string): agentId is CodingAgentId {
@@ -132,7 +152,8 @@ export class SessionManager {
   async start(): Promise<void> {
     for (const stored of await this.store.loadAll()) {
       this.sessions.set(stored.summary.id, {
-        summary: { ...stored.summary, status: 'idle' },
+        // Sessions saved by earlier versions have no provider.
+        summary: { ...stored.summary, provider: stored.summary.provider ?? null, status: 'idle' },
         state: settleSessionState(stored.state),
         seq: 0,
         agent: null,
@@ -231,11 +252,18 @@ export class SessionManager {
             : isOptionalModelName(request.model) &&
               (request.permissionMode === null || isModeName(request.permissionMode));
       if (!valid || typeof request.cwd !== 'string') throw new Error('Invalid session settings');
+      const billing = request.agentId === 'claude-code' ? request.billing : null;
+      if (billing !== null && billing !== 'subscription' && billing !== 'api') {
+        throw new Error('Invalid billing');
+      }
       summary = {
         ...base,
         agentId: request.agentId,
         cwd: request.cwd,
         endpointId: null,
+        // Gemini CLI always runs on the user's Gemini API key.
+        provider:
+          request.agentId === 'gemini-cli' ? 'gemini' : billing === 'api' ? 'anthropic' : null,
         model: request.model,
         permissionMode: request.permissionMode,
       };
@@ -249,6 +277,20 @@ export class SessionManager {
         agentId: 'local-model',
         cwd: null,
         endpointId: endpoint.id,
+        provider: null,
+        model: request.model,
+        permissionMode: null,
+      };
+    } else if (request.agentId === 'api-model') {
+      if (!isApiProvider(request.provider) || !isModelName(request.model)) {
+        throw new Error('Choose a provider and a model');
+      }
+      summary = {
+        ...base,
+        agentId: 'api-model',
+        cwd: null,
+        endpointId: null,
+        provider: request.provider,
         model: request.model,
         permissionMode: null,
       };
@@ -319,8 +361,24 @@ export class SessionManager {
       const resumeId = state.agentSessionId;
 
       if (summary.agentId === 'claude-code') {
+        let env = common.env;
+        if (summary.provider === 'anthropic') {
+          const apiKey = await getApiKey('anthropic');
+          if (!apiKey) {
+            throw new Error(
+              'This session is billed to your Anthropic API key. Add the key in Settings, under API keys.',
+            );
+          }
+          // A signed-in Claude Code keeps using the plan even when ANTHROPIC_API_KEY is set, so
+          // API-billed sessions run with a separate configuration folder that has no login.
+          // PowerChord never reads that folder; Claude Code keeps its own records there.
+          const configDir = join(app.getPath('userData'), 'claude-code-api');
+          await mkdir(configDir, { recursive: true });
+          env = { ...env, ANTHROPIC_API_KEY: apiKey, CLAUDE_CONFIG_DIR: configDir };
+        }
         return new ClaudeCodeSession({
           ...common,
+          env,
           executable: status.path,
           model: summary.model,
           permissionMode: isPermissionMode(summary.permissionMode)
@@ -355,14 +413,31 @@ export class SessionManager {
       });
     }
 
+    if (!summary.model) throw new Error('Choose a model');
+    const history = chatHistoryFromTranscript(state.items);
+    const restored = state.agentSessionId ? { agentSessionId: state.agentSessionId } : {};
+
+    if (summary.agentId === 'api-model') {
+      const provider = summary.provider;
+      if (!isApiProvider(provider)) throw new Error('This chat has no provider.');
+      return new ModelChatSession({
+        endpoint: await providerConnection(provider),
+        protocol: PROVIDER_APIS[provider].protocol,
+        priceFor: (model) => findPrice(provider, model),
+        model: summary.model,
+        history,
+        ...restored,
+        onEvent,
+      });
+    }
+
     const endpoint = summary.endpointId ? await findEndpoint(summary.endpointId) : undefined;
     if (!endpoint) throw new Error('The model server of this chat was removed.');
-    if (!summary.model) throw new Error('Choose a model');
     return new ModelChatSession({
-      endpoint: { baseUrl: endpoint.baseUrl },
+      endpoint: await endpointConnection(endpoint),
       model: summary.model,
-      history: chatHistoryFromTranscript(state.items),
-      ...(state.agentSessionId ? { agentSessionId: state.agentSessionId } : {}),
+      history,
+      ...restored,
       onEvent,
     });
   }
@@ -387,13 +462,74 @@ export class SessionManager {
       }
     }
 
+    if (event.type === 'turn-complete' && session.summary.provider) {
+      void recordUsage(session.summary.provider, event.summary);
+    }
+
     const message: SessionEventMessage = { sessionId, seq: session.seq, event };
     broadcast(IpcChannel.SessionEvent, message);
     this.persist(session);
     if (summaryChanged) this.notifySessionsChanged();
   }
 
-  private async send(session: ManagedSession, text: string): Promise<void> {
+  /**
+   * Asks before a pay-as-you-go message when the monthly budget is used up or the message is
+   * estimated to cost more than the user's threshold. Resolves false if the user declines.
+   */
+  private async confirmCost(
+    window: BrowserWindow | null,
+    session: ManagedSession,
+    text: string,
+  ): Promise<boolean> {
+    const { provider } = session.summary;
+    if (!provider) return true;
+    const budgets = await getBudgets();
+    const spent = await monthSpend(provider);
+    const budget = budgets.monthlyUsd[provider];
+    const model = session.state.model ?? session.summary.model;
+    const price = model ? findPrice(provider, model) : null;
+    const contextTokens = session.summary.agentId === 'claude-code' ? AGENT_CONTEXT_TOKENS : 0;
+    const transcript = session.state.items
+      .map((item) => (item.kind === 'user' || item.kind === 'text' ? item.text : ''))
+      .join('');
+    const estimate = price
+      ? estimateCost(
+          price,
+          contextTokens + approximateTokens(transcript + text),
+          ESTIMATED_OUTPUT_TOKENS,
+        )
+      : null;
+
+    let detail: string | null = null;
+    if (budget !== undefined && spent >= budget) {
+      detail = `You have used about ${formatUsd(spent)} of your ${formatUsd(budget)} monthly budget for the ${providerName(provider)}.`;
+    } else if (estimate !== null && estimate >= budgets.confirmAboveUsd) {
+      detail = `This message is estimated to cost about ${formatUsd(estimate)}, more than your ${formatUsd(budgets.confirmAboveUsd)} limit for asking.`;
+    }
+    if (detail === null) return true;
+
+    const confirmation: Electron.MessageBoxOptions = {
+      type: 'warning',
+      buttons: ['Send', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Pay-as-you-go usage',
+      message: 'Send this message?',
+      detail: `${detail}\n\nEstimates use list prices and may differ from what the provider bills. Budgets can be changed in Settings.`,
+    };
+    const { response } = window
+      ? await dialog.showMessageBox(window, confirmation)
+      : await dialog.showMessageBox(confirmation);
+    return response === 0;
+  }
+
+  private async send(
+    window: BrowserWindow | null,
+    session: ManagedSession,
+    text: string,
+  ): Promise<void> {
+    if (!(await this.confirmCost(window, session, text))) throw new Error('Message not sent.');
     let agent: SessionAgent;
     try {
       agent = await this.agentFor(session);
@@ -477,7 +613,7 @@ export class SessionManager {
       const valid =
         agentId === 'claude-code'
           ? isClaudeModel(settings.model)
-          : agentId === 'local-model'
+          : agentId === 'local-model' || agentId === 'api-model'
             ? isModelName(settings.model)
             : isOptionalModelName(settings.model);
       if (!valid) throw new Error('Invalid model');
@@ -514,9 +650,9 @@ export class SessionManager {
       const session = typeof sessionId === 'string' ? this.sessions.get(sessionId) : undefined;
       return session ? { summary: session.summary, state: session.state, seq: session.seq } : null;
     });
-    ipcMain.handle(IpcChannel.SendMessage, (_event, sessionId: unknown, text: unknown) => {
+    ipcMain.handle(IpcChannel.SendMessage, (event, sessionId: unknown, text: unknown) => {
       if (typeof text !== 'string' || text.trim().length === 0) throw new Error('Empty message');
-      return this.send(this.require(sessionId), text);
+      return this.send(BrowserWindow.fromWebContents(event.sender), this.require(sessionId), text);
     });
     ipcMain.handle(IpcChannel.InterruptSession, (_event, sessionId: unknown) => {
       this.require(sessionId).agent?.interrupt();

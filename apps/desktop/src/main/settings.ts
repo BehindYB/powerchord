@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { app } from 'electron';
+import { API_PROVIDERS, type Budgets } from '../shared/ipc';
 
 export interface StoredModelEndpoint {
   id: string;
@@ -25,6 +26,31 @@ interface Settings {
   modelEndpoints: StoredModelEndpoint[];
   hub: HubSettings;
   theme: ThemePreference;
+  budgets: Budgets;
+}
+
+const DEFAULT_CONFIRM_ABOVE_USD = 0.25;
+
+function isAmount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+export function parseBudgets(value: unknown): Budgets {
+  const budgets = (typeof value === 'object' && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+  const monthly = (budgets['monthlyUsd'] ?? {}) as Record<string, unknown>;
+  return {
+    monthlyUsd: Object.fromEntries(
+      API_PROVIDERS.flatMap((provider) =>
+        isAmount(monthly[provider.id]) ? [[provider.id, monthly[provider.id]]] : [],
+      ),
+    ),
+    confirmAboveUsd: isAmount(budgets['confirmAboveUsd'])
+      ? budgets['confirmAboveUsd']
+      : DEFAULT_CONFIRM_ABOVE_USD,
+  };
 }
 
 function parseTheme(value: unknown): ThemePreference {
@@ -86,6 +112,7 @@ async function load(): Promise<Settings> {
       : [],
     hub: parseHub(parsed.hub),
     theme: parseTheme(parsed.theme),
+    budgets: parseBudgets(parsed.budgets),
   };
   return cache;
 }
@@ -182,4 +209,13 @@ export async function regenerateHubToken(): Promise<HubSettings> {
   const hub = { ...settings.hub, token: randomBytes(32).toString('hex') };
   await save({ ...settings, hub });
   return hub;
+}
+
+export async function getBudgets(): Promise<Budgets> {
+  return (await load()).budgets;
+}
+
+export async function setBudgets(budgets: Budgets): Promise<void> {
+  const settings = await load();
+  await save({ ...settings, budgets });
 }

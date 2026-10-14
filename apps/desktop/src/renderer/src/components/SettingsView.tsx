@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Preferences, ThemePreference } from '../../../shared/ipc';
 import { useAppInfo } from '../hooks/useAppInfo';
 import { ApiKeysSection } from './ApiKeysSection';
+import { BudgetsSection } from './BudgetsSection';
 import { Picker } from './Composer';
 
 const BUTTON =
@@ -66,6 +67,7 @@ export function SettingsView() {
         />
 
         <ApiKeysSection />
+        <BudgetsSection />
 
         <h2 className="mt-8 mb-2 text-sm font-semibold">Trusted folders</h2>
         <p className="mb-2 text-sm text-muted">

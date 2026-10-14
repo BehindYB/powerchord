@@ -31,7 +31,7 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp server, vLLM and others), local or on the network
 - Network discovery: complete scan of small networks (such as an OpenVPN site network) and likely addresses on large ones, only on request
 - Chat sessions with local models, with streaming answers and reasoning output
-- Remaining: API keys for protected endpoints (OS secure storage)
+- API keys for protected endpoints (OS secure storage), added in phase 7
 
 ## Phase 4: Shared context hub (MCP) (done)
 
@@ -60,7 +60,15 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Packaging with electron-builder and a release workflow that builds Windows, macOS and Linux installers
 - Remaining: auto-update and code signing, once releases are public
 
-## Phase 7: Pay-as-you-go APIs
+## Phase 7: Pay-as-you-go APIs (done)
 
-- Direct API backends for Anthropic and OpenAI
-- Cost estimation, per-session and monthly budgets, and warnings before expensive requests
+- API model chats with Anthropic (Messages API), OpenAI and Gemini, using the user's own keys
+- Claude Code sessions billed to an Anthropic API key instead of the plan
+- Cost estimates from published list prices, a monthly ledger per provider, monthly budgets and confirmation before messages estimated above a threshold
+- API keys for protected model servers (OS secure storage)
+
+## Next
+
+- Auto-update and code signing once releases are public
+- Evaluate joining OpenAI's "Sign in with ChatGPT" program
+- Evaluate running Claude Code against local models through an LLM gateway

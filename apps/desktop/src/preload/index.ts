@@ -7,6 +7,7 @@ import {
   type PowerChordApi,
   type SessionEventMessage,
   type SessionSummary,
+  type UsageOverview,
 } from '../shared/ipc';
 
 function subscribe<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -44,8 +45,8 @@ const api: PowerChordApi = {
     subscribe<SessionSummary[]>(IpcChannel.SessionsChanged, listener),
 
   listModelEndpoints: () => ipcRenderer.invoke(IpcChannel.ListModelEndpoints),
-  addModelEndpoint: (baseUrl, name) =>
-    ipcRenderer.invoke(IpcChannel.AddModelEndpoint, baseUrl, name),
+  addModelEndpoint: (baseUrl, name, apiKey) =>
+    ipcRenderer.invoke(IpcChannel.AddModelEndpoint, baseUrl, name, apiKey),
   removeModelEndpoint: (endpointId) =>
     ipcRenderer.invoke(IpcChannel.RemoveModelEndpoint, endpointId),
   discoverModelServers: () => ipcRenderer.invoke(IpcChannel.DiscoverModelServers),
@@ -71,6 +72,10 @@ const api: PowerChordApi = {
   listApiKeys: () => ipcRenderer.invoke(IpcChannel.ListApiKeys),
   setApiKey: (provider, key) => ipcRenderer.invoke(IpcChannel.SetApiKey, provider, key),
   deleteApiKey: (provider) => ipcRenderer.invoke(IpcChannel.DeleteApiKey, provider),
+  listApiModels: (provider) => ipcRenderer.invoke(IpcChannel.ListApiModels, provider),
+  getUsage: () => ipcRenderer.invoke(IpcChannel.GetUsage),
+  setBudgets: (budgets) => ipcRenderer.invoke(IpcChannel.SetBudgets, budgets),
+  onUsageChanged: (listener) => subscribe<UsageOverview>(IpcChannel.UsageChanged, listener),
 };
 
 contextBridge.exposeInMainWorld('powerchord', api);

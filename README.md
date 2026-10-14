@@ -2,19 +2,19 @@
 
 A desktop workspace for AI coding agents and models. Run **Claude Code**, **OpenAI Codex**, **Gemini** and **local models** from a single interface, using the subscriptions and tools you already have.
 
-> **Status: pre-alpha.** Agent setup, Claude Code sessions (streaming, tool calls, permission prompts, questions, plan usage), local model chats with network discovery, a shared MCP hub (tasks, notes, and delegation from agents to local models), saved session history with resume, side-by-side sessions, and Codex and Gemini CLI sessions work. See the [roadmap](docs/ROADMAP.md).
+> **Status: pre-alpha.** Agent setup, Claude Code sessions (streaming, tool calls, permission prompts, questions, plan usage), local model chats with network discovery, a shared MCP hub (tasks, notes, and delegation from agents to local models), saved session history with resume, side-by-side sessions, Codex and Gemini CLI sessions, and pay-as-you-go API chats with budgets work. See the [roadmap](docs/ROADMAP.md).
 
 ## How it works
 
 PowerChord does not talk to subscription services directly. It drives the **official, unmodified command-line agents** published by each vendor, installed from their official channels and signed in through their own login flows, using each agent's documented integration protocol. Subscriptions are supported only where the vendor's terms allow it; see [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
 
-| Backend            | Access                            | Integration                 |
-| ------------------ | --------------------------------- | --------------------------- |
-| Claude Code        | Claude Pro / Max subscription     | Official `claude` binary    |
-| OpenAI Codex       | ChatGPT plan or OpenAI API key    | Official `codex` binary     |
-| Gemini CLI         | Gemini API key                    | Official `gemini` binary    |
-| Local models       | Ollama, llama.cpp, LM Studio, ... | OpenAI-compatible HTTP API  |
-| Pay-as-you-go APIs | API keys                          | Planned, with cost controls |
+| Backend            | Access                            | Integration                |
+| ------------------ | --------------------------------- | -------------------------- |
+| Claude Code        | Claude Pro / Max subscription     | Official `claude` binary   |
+| OpenAI Codex       | ChatGPT plan or OpenAI API key    | Official `codex` binary    |
+| Gemini CLI         | Gemini API key                    | Official `gemini` binary   |
+| Local models       | Ollama, llama.cpp, LM Studio, ... | OpenAI-compatible HTTP API |
+| Pay-as-you-go APIs | Anthropic, OpenAI, Gemini keys    | Direct APIs, with budgets  |
 
 ## Principles
 

@@ -5,6 +5,8 @@ import {
   type ChatUsage,
   type ModelEndpoint,
 } from '../../models/openai-compatible.ts';
+import { streamAnthropicChat } from '../../models/anthropic.ts';
+import { estimateCost, type ModelPrice } from '../../models/pricing.ts';
 import type { AgentSession, SessionEvent, SessionStatus, TranscriptItem } from '../types.ts';
 
 export interface ModelChatSessionOptions {
@@ -16,6 +18,10 @@ export interface ModelChatSessionOptions {
   history?: ChatMessage[];
   /** Identifier of a restored conversation. */
   agentSessionId?: string;
+  /** Wire protocol of the endpoint; OpenAI-compatible unless stated. */
+  protocol?: 'openai-compatible' | 'anthropic';
+  /** List price of a model, used to estimate each turn's cost; null when unknown or free. */
+  priceFor?: (model: string) => ModelPrice | null;
 }
 
 /**
@@ -45,7 +51,7 @@ export function chatHistoryFromTranscript(items: readonly TranscriptItem[]): Cha
   return history;
 }
 
-/** A chat session with a model served by an OpenAI-compatible endpoint. */
+/** A chat session with a model served by an OpenAI-compatible endpoint or Anthropic's API. */
 export class ModelChatSession implements AgentSession {
   readonly agentSessionId: string;
   private readonly options: ModelChatSessionOptions;
@@ -126,6 +132,12 @@ export class ModelChatSession implements AgentSession {
     this.emit({ type: 'status', status });
   }
 
+  private estimate(usage: ChatUsage): number | null {
+    const price = this.options.priceFor?.(this.model);
+    if (!price || usage.inputTokens === null || usage.outputTokens === null) return null;
+    return estimateCost(price, usage.inputTokens, usage.outputTokens);
+  }
+
   private async runTurn(): Promise<void> {
     const controller = new AbortController();
     this.controller = controller;
@@ -147,7 +159,7 @@ export class ModelChatSession implements AgentSession {
     };
 
     try {
-      const stream = streamChat(
+      const stream = (this.options.protocol === 'anthropic' ? streamAnthropicChat : streamChat)(
         this.options.endpoint,
         { model: this.model, messages: [...this.history] },
         controller.signal,
@@ -180,7 +192,7 @@ export class ModelChatSession implements AgentSession {
         summary: {
           isError: false,
           durationMs: Date.now() - started,
-          costUsd: null,
+          costUsd: this.estimate(usage),
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
         },

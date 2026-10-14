@@ -18,6 +18,8 @@ export interface FakeModelServerOptions {
   chunkDelayMs?: number;
   /** Port to listen on; a free port by default. */
   port?: number;
+  /** When set, requests must carry this bearer token. */
+  apiKey?: string;
 }
 
 export async function startFakeModelServer(
@@ -29,6 +31,11 @@ export async function startFakeModelServer(
   const chatRequests: unknown[] = [];
 
   const server: Server = createServer((request, response) => {
+    if (options.apiKey && request.headers.authorization !== `Bearer ${options.apiKey}`) {
+      response.writeHead(401, { 'Content-Type': 'application/json' });
+      response.end(JSON.stringify({ error: { message: 'Invalid API key' } }));
+      return;
+    }
     if (request.method === 'GET' && request.url === '/v1/models') {
       response.writeHead(200, { 'Content-Type': 'application/json' });
       response.end(
