@@ -10,13 +10,17 @@ import {
   type PowerChordMcpServer,
 } from '../../mcp/server.ts';
 import {
+  CLAUDE_PERMISSION_MODES,
   QUESTION_TOOL_NAME,
+  type AgentSession,
   type PermissionBehavior,
   type PermissionMode,
+  type PermissionScope,
   type QuestionAnswers,
   type SessionEvent,
   type SessionStatus,
 } from '../types.ts';
+import { stopProcessTree } from '../../system/process.ts';
 import { ClaudeStreamParser } from './parser.ts';
 
 /*
@@ -43,15 +47,13 @@ export interface ClaudeCodeSessionOptions {
   label?: string;
 }
 
-export type PermissionScope = 'once' | 'session';
-
 interface PendingPermission {
   toolName: string;
   input: Record<string, unknown>;
   resolve: (decision: PermissionDecision) => void;
 }
 
-export class ClaudeCodeSession {
+export class ClaudeCodeSession implements AgentSession {
   readonly agentSessionId: string;
   private readonly options: ClaudeCodeSessionOptions;
   private readonly registration: McpClientRegistration;
@@ -139,8 +141,11 @@ export class ClaudeCodeSession {
     this.scheduleRestart();
   }
 
-  setPermissionMode(mode: PermissionMode): void {
-    this.permissionMode = mode;
+  setMode(mode: string): void {
+    if (!CLAUDE_PERMISSION_MODES.includes(mode as PermissionMode)) {
+      throw new Error(`Unknown permission mode: ${mode}`);
+    }
+    this.permissionMode = mode as PermissionMode;
     this.scheduleRestart();
   }
 
@@ -269,19 +274,7 @@ export class ClaudeCodeSession {
     const child = this.child;
     if (!child) return;
     this.expectedExit = true;
-    child.stdin.end();
-    if (process.platform === 'win32' && child.pid !== undefined) {
-      // Ends Claude Code together with any commands it started.
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
-        windowsHide: true,
-        stdio: 'ignore',
-      });
-    } else {
-      child.kill('SIGINT');
-      setTimeout(() => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-      }, 3000).unref();
-    }
+    stopProcessTree(child);
   }
 
   private requestPermission(request: PermissionRequest): Promise<PermissionDecision> {

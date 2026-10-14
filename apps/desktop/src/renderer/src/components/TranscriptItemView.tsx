@@ -92,9 +92,11 @@ function ToolCallView({ item }: { item: Extract<TranscriptItem, { kind: 'tool-ca
 
 function PermissionView({
   item,
+  agentName,
   onRespond,
 }: {
   item: Extract<TranscriptItem, { kind: 'permission' }>;
+  agentName: string;
   onRespond: (behavior: PermissionBehavior, scope: 'once' | 'session') => void;
 }) {
   const input = asRecord(item.input);
@@ -109,8 +111,11 @@ function PermissionView({
     >
       <p className="font-medium">
         {plan
-          ? 'Claude proposes this plan'
-          : `Claude wants to use ${toolDisplayName(item.toolName)}`}
+          ? `${agentName} proposes this plan`
+          : // ACP agents name the action itself, for example "Write a.txt".
+            item.toolName.includes(' ')
+            ? `${agentName} asks for permission: ${item.toolName}`
+            : `${agentName} wants to use ${toolDisplayName(item.toolName)}`}
       </p>
       {plan ? (
         <div className="mt-2">
@@ -157,10 +162,12 @@ function PermissionView({
 /** Multiple-choice questions from Claude Code's AskUserQuestion tool. */
 function QuestionView({
   item,
+  agentName,
   onAnswer,
   onSkip,
 }: {
   item: Extract<TranscriptItem, { kind: 'permission' }>;
+  agentName: string;
   onAnswer: (answers: QuestionAnswers) => void;
   onSkip: () => void;
 }) {
@@ -192,7 +199,9 @@ function QuestionView({
         pending ? 'border-accent bg-accent/5' : 'border-border bg-elevated'
       }`}
     >
-      <p className="font-medium">Claude has {questions.length > 1 ? 'questions' : 'a question'}</p>
+      <p className="font-medium">
+        {agentName} has {questions.length > 1 ? 'questions' : 'a question'}
+      </p>
       <div className="mt-3 flex flex-col gap-4">
         {questions.map((entry) => (
           <fieldset key={entry.question} disabled={!pending}>
@@ -286,10 +295,12 @@ function formatDuration(ms: number): string {
 
 export function TranscriptItemView({
   item,
+  agentName,
   onRespond,
   onAnswer,
 }: {
   item: TranscriptItem;
+  agentName: string;
   onRespond: (requestId: string, behavior: PermissionBehavior, scope: 'once' | 'session') => void;
   onAnswer: (requestId: string, answers: QuestionAnswers) => void;
 }) {
@@ -327,6 +338,7 @@ export function TranscriptItemView({
         return (
           <QuestionView
             item={item}
+            agentName={agentName}
             onAnswer={(answers) => onAnswer(item.id, answers)}
             onSkip={() => onRespond(item.id, 'deny', 'once')}
           />
@@ -335,6 +347,7 @@ export function TranscriptItemView({
       return (
         <PermissionView
           item={item}
+          agentName={agentName}
           onRespond={(behavior, scope) => onRespond(item.id, behavior, scope)}
         />
       );

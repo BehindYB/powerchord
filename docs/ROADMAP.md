@@ -42,13 +42,14 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Hand-off flow: plan in one agent, continue in another, review in a third, all recorded in PowerChord
 - Rules in [COMPLIANCE.md](COMPLIANCE.md#powerchord-mcp-server)
 
-## Phase 5: Codex and Gemini
+## Phase 5: Codex and Gemini (done)
 
-- Codex through its official app-server protocol, signed in with the user's own `codex login`
-- Gemini CLI over ACP (`gemini --acp`) with a paid Gemini API key, which can be billed to the Google Cloud credits included in Google AI Pro/Ultra
-- Gemini chat through a Google AI Studio API key, with usage tracking, budgets and warnings
-- Evaluate joining OpenAI's "Sign in with ChatGPT" program
-- Evaluate running Claude Code against local models through an LLM gateway
+- Codex through its official app-server protocol, signed in with the user's own `codex login`: streaming, reasoning summaries, command and file-change approvals, sandbox modes (read only, auto, full access), model list, plan usage, thread resume and the hub
+- Gemini CLI over ACP (`gemini --acp`) with the user's Gemini API key, which can be billed to the Google Cloud credits included in Google AI Pro/Ultra: streaming, thoughts, tool calls, permission prompts, the agent's own models and modes, session loading and the hub
+- A generic Agent Client Protocol client, ready for other ACP agents
+- API keys stored with the operating system's secure storage and checked with the provider before saving
+- Gemini chat through an API key is part of phase 7
+- Later: evaluate joining OpenAI's "Sign in with ChatGPT" program, and running Claude Code against local models through an LLM gateway
 
 ## Phase 6: Persistence and polish (done, except auto-update)
 

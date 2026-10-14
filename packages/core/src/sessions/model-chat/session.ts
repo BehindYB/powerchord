@@ -5,7 +5,7 @@ import {
   type ChatUsage,
   type ModelEndpoint,
 } from '../../models/openai-compatible.ts';
-import type { SessionEvent, SessionStatus, TranscriptItem } from '../types.ts';
+import type { AgentSession, SessionEvent, SessionStatus, TranscriptItem } from '../types.ts';
 
 export interface ModelChatSessionOptions {
   endpoint: ModelEndpoint;
@@ -46,7 +46,7 @@ export function chatHistoryFromTranscript(items: readonly TranscriptItem[]): Cha
 }
 
 /** A chat session with a model served by an OpenAI-compatible endpoint. */
-export class ModelChatSession {
+export class ModelChatSession implements AgentSession {
   readonly agentSessionId: string;
   private readonly options: ModelChatSessionOptions;
   private readonly history: ChatMessage[] = [];
@@ -93,6 +93,22 @@ export class ModelChatSession {
       model,
       permissionMode: null,
     });
+  }
+
+  setMode(): void {
+    throw new Error('Model chats have no modes.');
+  }
+
+  respondToPermission(): void {
+    // Model chats have no tools, so they never ask for permission.
+  }
+
+  answerQuestion(): void {
+    // Model chats never ask structured questions.
+  }
+
+  setLabel(): void {
+    // Model chats do not use the hub.
   }
 
   close(): void {

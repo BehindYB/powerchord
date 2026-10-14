@@ -12,5 +12,10 @@ export type {
   UsageLimits,
   UsageWindow,
 } from './types.ts';
-export { createSessionState, parseAgentQuestions, QUESTION_TOOL_NAME } from './types.ts';
+export {
+  CLAUDE_PERMISSION_MODES,
+  createSessionState,
+  parseAgentQuestions,
+  QUESTION_TOOL_NAME,
+} from './types.ts';
 export { applySessionEvent, settleSessionState } from './transcript.ts';

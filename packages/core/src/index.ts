@@ -30,9 +30,12 @@ export { findExecutable, resolveSearchPath } from './system/search-path.ts';
 export { openInTerminal, type TerminalLaunchOptions } from './system/terminal.ts';
 export type {
   AgentQuestion,
+  AgentSession,
   PermissionBehavior,
   PermissionMode,
+  PermissionScope,
   QuestionAnswers,
+  SessionOption,
   SessionEvent,
   SessionState,
   SessionStatus,
@@ -47,8 +50,23 @@ export { ClaudeStreamParser } from './sessions/claude-code/parser.ts';
 export {
   ClaudeCodeSession,
   type ClaudeCodeSessionOptions,
-  type PermissionScope,
 } from './sessions/claude-code/session.ts';
+export { AcpSession, type AcpSessionOptions } from './sessions/acp/session.ts';
+export {
+  CODEX_MODES,
+  CodexSession,
+  codexUsageLimits,
+  isCodexMode,
+  type CodexMode,
+  type CodexSessionOptions,
+} from './sessions/codex/session.ts';
+export {
+  JsonRpcConnection,
+  JsonRpcError,
+  METHOD_NOT_FOUND,
+  type JsonRpcConnectionOptions,
+} from './system/json-rpc.ts';
+export { spawnAgentProcess, stopProcessTree } from './system/process.ts';
 export {
   PowerChordMcpServer,
   type McpClientHandlers,

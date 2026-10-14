@@ -52,6 +52,9 @@ export const IpcChannel = {
   RemoveTrustedFolder: 'preferences:remove-trusted-folder',
   OpenDataFolder: 'preferences:open-data-folder',
   RegenerateHubToken: 'preferences:regenerate-hub-token',
+  ListApiKeys: 'api-keys:list',
+  SetApiKey: 'api-keys:set',
+  DeleteApiKey: 'api-keys:delete',
 } as const;
 
 export interface AppInfo {
@@ -95,7 +98,17 @@ export interface InstallOutputEvent {
 }
 
 /** Agents that PowerChord can run sessions with. */
-export type SessionAgentId = 'claude-code' | 'local-model';
+export type SessionAgentId = 'claude-code' | 'codex' | 'gemini-cli' | 'local-model';
+
+/** Agents that work in a folder on the user's computer. */
+export type CodingAgentId = Exclude<SessionAgentId, 'local-model'>;
+
+export const SESSION_AGENT_NAMES: Record<SessionAgentId, string> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  'gemini-cli': 'Gemini CLI',
+  'local-model': 'Local model',
+};
 
 export interface ModelOption {
   /** Value passed to the agent; null selects the agent's default model. */
@@ -122,6 +135,24 @@ export const PERMISSION_MODES: readonly {
   { id: 'auto', label: 'Auto', description: 'Let Claude Code review actions automatically' },
 ];
 
+export const CODEX_MODE_OPTIONS: readonly {
+  id: 'read-only' | 'auto' | 'full-access';
+  label: string;
+  description: string;
+}[] = [
+  {
+    id: 'read-only',
+    label: 'Read only',
+    description: 'Read files; ask before changes and commands',
+  },
+  { id: 'auto', label: 'Auto', description: 'Edit and run commands in the folder; ask for more' },
+  {
+    id: 'full-access',
+    label: 'Full access',
+    description: 'No sandbox and no approvals. Use only in folders you can restore',
+  },
+];
+
 export interface SessionSummary {
   id: string;
   agentId: SessionAgentId;
@@ -132,8 +163,8 @@ export interface SessionSummary {
   endpointId: string | null;
   status: SessionStatus;
   model: string | null;
-  /** Null for agents without permission modes. */
-  permissionMode: PermissionMode | null;
+  /** Agent-specific mode, such as a Claude Code permission mode; null for agents without modes. */
+  permissionMode: string | null;
   createdAt: number;
   /** Time of the last message, used to order the session list. */
   lastActiveAt: number;
@@ -148,6 +179,8 @@ export interface SessionSnapshot {
 
 export type CreateSessionRequest =
   | { agentId: 'claude-code'; cwd: string; model: string | null; permissionMode: PermissionMode }
+  | { agentId: 'codex'; cwd: string; model: string | null; permissionMode: string }
+  | { agentId: 'gemini-cli'; cwd: string; model: string | null; permissionMode: string | null }
   | { agentId: 'local-model'; endpointId: string; model: string };
 
 export interface ModelEndpointInfo {
@@ -211,6 +244,43 @@ export interface Preferences {
   dataFolder: string;
 }
 
+/** Providers whose pay-as-you-go APIs PowerChord can use with the user's own key. */
+export type ApiProviderId = 'gemini' | 'openai' | 'anthropic';
+
+export const API_PROVIDERS: readonly {
+  id: ApiProviderId;
+  name: string;
+  /** Where the user creates a key. */
+  keyUrl: string;
+  usedFor: string;
+}[] = [
+  {
+    id: 'gemini',
+    name: 'Google Gemini API',
+    keyUrl: 'https://aistudio.google.com/apikey',
+    usedFor: 'Gemini CLI sessions and Gemini chats',
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI API',
+    keyUrl: 'https://platform.openai.com/api-keys',
+    usedFor: 'OpenAI chats',
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic API',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+    usedFor: 'Claude chats billed to your API account',
+  },
+];
+
+export interface ApiKeyInfo {
+  provider: ApiProviderId;
+  configured: boolean;
+  /** Last characters of the stored key. */
+  hint: string | null;
+}
+
 /** API exposed to the renderer as `window.powerchord` by the preload script. */
 export interface PowerChordApi {
   getAppInfo(): Promise<AppInfo>;
@@ -241,7 +311,7 @@ export interface PowerChordApi {
   answerQuestion(sessionId: string, requestId: string, answers: QuestionAnswers): Promise<void>;
   updateSessionSettings(
     sessionId: string,
-    settings: { model?: string | null; permissionMode?: PermissionMode },
+    settings: { model?: string | null; permissionMode?: string },
   ): Promise<void>;
   /** Asks for confirmation, then stops the session and removes it from the history. */
   deleteSession(sessionId: string): Promise<boolean>;
@@ -280,4 +350,9 @@ export interface PowerChordApi {
   openDataFolder(): Promise<void>;
   /** Confirms in a native dialog; false if the user cancelled. */
   regenerateHubToken(): Promise<boolean>;
+
+  listApiKeys(): Promise<ApiKeyInfo[]>;
+  /** Checks the key with the provider, then stores it encrypted. */
+  setApiKey(provider: ApiProviderId, key: string): Promise<void>;
+  deleteApiKey(provider: ApiProviderId): Promise<void>;
 }

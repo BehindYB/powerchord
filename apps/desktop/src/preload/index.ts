@@ -68,6 +68,9 @@ const api: PowerChordApi = {
   removeTrustedFolder: (folder) => ipcRenderer.invoke(IpcChannel.RemoveTrustedFolder, folder),
   openDataFolder: () => ipcRenderer.invoke(IpcChannel.OpenDataFolder),
   regenerateHubToken: () => ipcRenderer.invoke(IpcChannel.RegenerateHubToken),
+  listApiKeys: () => ipcRenderer.invoke(IpcChannel.ListApiKeys),
+  setApiKey: (provider, key) => ipcRenderer.invoke(IpcChannel.SetApiKey, provider, key),
+  deleteApiKey: (provider) => ipcRenderer.invoke(IpcChannel.DeleteApiKey, provider),
 };
 
 contextBridge.exposeInMainWorld('powerchord', api);

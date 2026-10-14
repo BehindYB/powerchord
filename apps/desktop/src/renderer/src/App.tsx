@@ -95,6 +95,7 @@ export function App() {
         onCreated={(id) => openSession(id, false)}
         onOpenAgents={() => setView({ kind: 'agents' })}
         onOpenModels={() => setView({ kind: 'models' })}
+        onOpenSettings={() => setView({ kind: 'settings' })}
       />
     );
   }

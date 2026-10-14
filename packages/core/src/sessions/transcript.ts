@@ -34,6 +34,8 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
         agentSessionId: event.agentSessionId,
         model: event.model ?? state.model,
         permissionMode: event.permissionMode ?? state.permissionMode,
+        availableModels: event.availableModels ?? state.availableModels,
+        availableModes: event.availableModes ?? state.availableModes,
       };
 
     case 'usage-limits':
@@ -158,7 +160,14 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
  * blocks, prompts and tool calls are closed.
  */
 export function settleSessionState(state: SessionState): SessionState {
-  return { ...state, status: 'idle', items: finishOpenItems(state.items) };
+  return {
+    ...state,
+    // Files saved by earlier versions lack these fields.
+    availableModels: state.availableModels ?? null,
+    availableModes: state.availableModes ?? null,
+    status: 'idle',
+    items: finishOpenItems(state.items),
+  };
 }
 
 /** Marks streaming blocks and unanswered prompts as finished when a turn ends. */

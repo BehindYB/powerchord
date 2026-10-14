@@ -1,17 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import {
+  AcpSession,
   applySessionEvent,
   buildChildEnv,
   chatHistoryFromTranscript,
   ClaudeCodeSession,
+  CodexSession,
   createSessionState,
   detectAgent,
   getAgent,
+  isCodexMode,
   ModelChatSession,
   openInTerminal,
   resolveSearchPath,
   settleSessionState,
+  type AgentId,
+  type AgentSession,
   type PowerChordMcpServer,
   type PermissionMode,
   type QuestionAnswers,
@@ -23,12 +28,15 @@ import {
   CLAUDE_MODELS,
   IpcChannel,
   PERMISSION_MODES,
+  SESSION_AGENT_NAMES,
+  type CodingAgentId,
   type CreateSessionRequest,
   type OpenTarget,
   type SessionEventMessage,
   type SessionSnapshot,
   type SessionSummary,
 } from '../shared/ipc';
+import { getApiKey } from './api-keys';
 import { findEndpoint } from './models';
 import { SessionStore } from './session-store';
 import { isFolderTrusted, trustFolder } from './settings';
@@ -37,7 +45,7 @@ const TITLE_LENGTH = 60;
 /** Length of the session name recorded as the author of hub changes. */
 const LABEL_LENGTH = 32;
 
-type SessionAgent = ClaudeCodeSession | ModelChatSession;
+type SessionAgent = AgentSession;
 
 interface ManagedSession {
   summary: SessionSummary;
@@ -67,11 +75,29 @@ function isModelName(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 256;
 }
 
-function claudeSession(session: ManagedSession): ClaudeCodeSession {
-  if (!(session.agent instanceof ClaudeCodeSession)) {
-    throw new Error('This action is only available for active Claude Code sessions.');
-  }
+function isOptionalModelName(value: unknown): value is string | null {
+  return value === null || isModelName(value);
+}
+
+/** Modes are validated by the agents; Gemini CLI reports its own. */
+function isModeName(value: unknown): value is string {
+  return typeof value === 'string' && /^[\w.-]{1,64}$/.test(value);
+}
+
+function isCodingAgent(agentId: string): agentId is CodingAgentId {
+  return agentId === 'claude-code' || agentId === 'codex' || agentId === 'gemini-cli';
+}
+
+function activeAgent(session: ManagedSession): AgentSession {
+  if (!session.agent) throw new Error('This session is not running.');
   return session.agent;
+}
+
+function agentLabel(summary: SessionSummary): string {
+  const name = SESSION_AGENT_NAMES[summary.agentId];
+  return summary.title === 'New session'
+    ? name
+    : `${name}: ${makeTitle(summary.title, LABEL_LENGTH)}`;
 }
 
 function isAnswers(value: unknown): value is QuestionAnswers {
@@ -196,13 +222,18 @@ export class SessionManager {
     };
     let summary: SessionSummary;
 
-    if (request.agentId === 'claude-code') {
-      if (!isClaudeModel(request.model) || !isPermissionMode(request.permissionMode)) {
-        throw new Error('Invalid session settings');
-      }
+    if (isCodingAgent(request.agentId) && 'cwd' in request) {
+      const valid =
+        request.agentId === 'claude-code'
+          ? isClaudeModel(request.model) && isPermissionMode(request.permissionMode)
+          : request.agentId === 'codex'
+            ? isOptionalModelName(request.model) && isCodexMode(request.permissionMode)
+            : isOptionalModelName(request.model) &&
+              (request.permissionMode === null || isModeName(request.permissionMode));
+      if (!valid || typeof request.cwd !== 'string') throw new Error('Invalid session settings');
       summary = {
         ...base,
-        agentId: 'claude-code',
+        agentId: request.agentId,
         cwd: request.cwd,
         endpointId: null,
         model: request.model,
@@ -265,31 +296,63 @@ export class SessionManager {
     const { summary, state } = session;
     const onEvent = (event: SessionEvent) => this.handleEvent(summary.id, event);
 
-    if (summary.agentId === 'claude-code') {
+    if (isCodingAgent(summary.agentId)) {
       if (summary.cwd === null) throw new Error('This session has no working folder.');
       await this.checkWorkingFolder(summary.cwd);
       const searchPath = await resolveSearchPath();
-      const status = await detectAgent(getAgent('claude-code'), { searchPath });
+      const definition = getAgent(summary.agentId as AgentId);
+      const status = await detectAgent(definition, { searchPath });
       if (!status.path) {
-        throw new Error('Claude Code is not installed. Install it from the Agents screen.');
+        throw new Error(
+          `${definition.displayName} is not installed. Install it from the Agents screen.`,
+        );
       }
-      const agent = new ClaudeCodeSession({
-        executable: status.path,
+      const common = {
         cwd: summary.cwd,
         env: buildChildEnv(searchPath),
         mcp: this.mcp,
-        model: summary.model,
-        permissionMode: summary.permissionMode ?? 'default',
         hubTools: true,
-        label:
-          summary.title === 'New session'
-            ? 'Claude Code'
-            : `Claude Code: ${makeTitle(summary.title, LABEL_LENGTH)}`,
-        // Continues the conversation Claude Code stored for this session.
-        ...(state.agentSessionId ? { resumeSessionId: state.agentSessionId } : {}),
+        label: agentLabel(summary),
         onEvent,
+      };
+      // Each agent continues the conversation it stored for this session.
+      const resumeId = state.agentSessionId;
+
+      if (summary.agentId === 'claude-code') {
+        return new ClaudeCodeSession({
+          ...common,
+          executable: status.path,
+          model: summary.model,
+          permissionMode: isPermissionMode(summary.permissionMode)
+            ? summary.permissionMode
+            : 'default',
+          ...(resumeId ? { resumeSessionId: resumeId } : {}),
+        });
+      }
+      if (summary.agentId === 'codex') {
+        return new CodexSession({
+          ...common,
+          command: { command: status.path, args: [] },
+          model: summary.model,
+          mode: isCodexMode(summary.permissionMode) ? summary.permissionMode : 'auto',
+          ...(resumeId ? { resumeThreadId: resumeId } : {}),
+        });
+      }
+      const apiKey = await getApiKey('gemini');
+      if (!apiKey) {
+        throw new Error('Gemini CLI needs a Gemini API key. Add one in Settings, under API keys.');
+      }
+      return new AcpSession({
+        ...common,
+        // The key reaches Gemini CLI through its documented environment variable only.
+        env: { ...common.env, GEMINI_API_KEY: apiKey },
+        agentName: 'Gemini CLI',
+        command: { command: status.path, args: ['--acp'] },
+        authMethodId: 'gemini-api-key',
+        model: summary.model,
+        mode: summary.permissionMode,
+        ...(resumeId ? { resumeSessionId: resumeId } : {}),
       });
-      return agent;
     }
 
     const endpoint = summary.endpointId ? await findEndpoint(summary.endpointId) : undefined;
@@ -320,9 +383,7 @@ export class SessionManager {
       summaryChanged = true;
       if (session.summary.title === 'New session') {
         session.summary = { ...session.summary, title: makeTitle(event.text) || 'New session' };
-        if (session.agent instanceof ClaudeCodeSession) {
-          session.agent.setLabel(`Claude Code: ${makeTitle(event.text, LABEL_LENGTH)}`);
-        }
+        session.agent?.setLabel(agentLabel(session.summary));
       }
     }
 
@@ -349,7 +410,8 @@ export class SessionManager {
   }
 
   private async delete(window: BrowserWindow | null, session: ManagedSession): Promise<boolean> {
-    const isClaude = session.summary.agentId === 'claude-code';
+    const { agentId } = session.summary;
+    const agentName = SESSION_AGENT_NAMES[agentId];
     const confirmation: Electron.MessageBoxOptions = {
       type: 'question',
       buttons: ['Delete', 'Cancel'],
@@ -358,8 +420,8 @@ export class SessionManager {
       noLink: true,
       title: 'Delete session',
       message: `Delete "${session.summary.title}"?`,
-      detail: isClaude
-        ? "PowerChord removes the session from its history. Claude Code keeps its own record of the conversation, which you can still resume with 'claude --resume'."
+      detail: isCodingAgent(agentId)
+        ? `PowerChord removes the session from its history. ${agentName} keeps its own record of the conversation, which you can still resume from ${agentName} itself.`
         : 'The conversation is removed from PowerChord.',
     };
     const { response } = window
@@ -410,24 +472,30 @@ export class SessionManager {
     session: ManagedSession,
     settings: { model?: unknown; permissionMode?: unknown },
   ): void {
+    const { agentId } = session.summary;
     if (settings.model !== undefined) {
       const valid =
-        session.summary.agentId === 'claude-code'
+        agentId === 'claude-code'
           ? isClaudeModel(settings.model)
-          : isModelName(settings.model);
+          : agentId === 'local-model'
+            ? isModelName(settings.model)
+            : isOptionalModelName(settings.model);
       if (!valid) throw new Error('Invalid model');
       const model = settings.model as string | null;
       session.agent?.setModel(model);
       session.summary = { ...session.summary, model };
     }
     if (settings.permissionMode !== undefined) {
-      if (session.summary.agentId !== 'claude-code' || !isPermissionMode(settings.permissionMode)) {
-        throw new Error('Invalid mode');
-      }
-      if (session.agent instanceof ClaudeCodeSession) {
-        session.agent.setPermissionMode(settings.permissionMode);
-      }
-      session.summary = { ...session.summary, permissionMode: settings.permissionMode };
+      const mode = settings.permissionMode;
+      const valid =
+        agentId === 'claude-code'
+          ? isPermissionMode(mode)
+          : agentId === 'codex'
+            ? isCodexMode(mode)
+            : agentId === 'gemini-cli' && isModeName(mode);
+      if (!valid) throw new Error('Invalid mode');
+      session.agent?.setMode(mode as string);
+      session.summary = { ...session.summary, permissionMode: mode as string };
     }
     this.persist(session);
     this.notifySessionsChanged();
@@ -459,7 +527,7 @@ export class SessionManager {
         if (typeof requestId !== 'string') throw new Error('Invalid request');
         if (behavior !== 'allow' && behavior !== 'deny') throw new Error('Invalid decision');
         if (scope !== 'once' && scope !== 'session') throw new Error('Invalid scope');
-        claudeSession(this.require(sessionId)).respondToPermission(requestId, behavior, scope);
+        activeAgent(this.require(sessionId)).respondToPermission(requestId, behavior, scope);
       },
     );
     ipcMain.handle(
@@ -467,7 +535,7 @@ export class SessionManager {
       (_event, sessionId: unknown, requestId: unknown, answers: unknown) => {
         if (typeof requestId !== 'string') throw new Error('Invalid request');
         if (!isAnswers(answers)) throw new Error('Invalid answers');
-        claudeSession(this.require(sessionId)).answerQuestion(requestId, answers);
+        activeAgent(this.require(sessionId)).answerQuestion(requestId, answers);
       },
     );
     ipcMain.handle(

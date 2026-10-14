@@ -6,9 +6,46 @@
 
 export type SessionStatus = 'idle' | 'starting' | 'running' | 'stopped';
 
+/** Claude Code permission modes. Other agents define their own modes as plain strings. */
 export type PermissionMode = 'default' | 'acceptEdits' | 'plan' | 'auto';
 
+export const CLAUDE_PERMISSION_MODES: readonly PermissionMode[] = [
+  'default',
+  'acceptEdits',
+  'plan',
+  'auto',
+];
+
 export type PermissionBehavior = 'allow' | 'deny';
+
+/** Whether an approval covers one call or the rest of the session. */
+export type PermissionScope = 'once' | 'session';
+
+/** A model or mode an agent offers, as reported by the agent. */
+export interface SessionOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+/** Operations PowerChord performs on a running agent session, whatever the agent. */
+export interface AgentSession {
+  send(text: string): void;
+  interrupt(): void;
+  /** Applies from the next turn. Null selects the agent's default model. */
+  setModel(model: string | null): void;
+  /** Applies from the next turn. Throws if the agent has no such mode. */
+  setMode(mode: string): void;
+  respondToPermission(
+    requestId: string,
+    behavior: PermissionBehavior,
+    scope: PermissionScope,
+  ): void;
+  answerQuestion(requestId: string, answers: QuestionAnswers): void;
+  /** Author name for hub changes made by the session. */
+  setLabel(label: string): void;
+  close(): void;
+}
 
 /** Tool through which Claude Code asks the user multiple-choice questions. */
 export const QUESTION_TOOL_NAME = 'AskUserQuestion';
@@ -80,6 +117,10 @@ export type SessionEvent =
       agentSessionId: string;
       model: string | null;
       permissionMode: string | null;
+      /** Models the agent offers, when it reports them. */
+      availableModels?: SessionOption[];
+      /** Modes the agent offers, when it reports them. */
+      availableModes?: SessionOption[];
     }
   | { type: 'user-message'; id: string; text: string }
   | { type: 'block-start'; id: string; kind: 'text' | 'thinking' }
@@ -136,6 +177,8 @@ export interface SessionState {
   agentSessionId: string | null;
   model: string | null;
   permissionMode: string | null;
+  availableModels: SessionOption[] | null;
+  availableModes: SessionOption[] | null;
   usageLimits: UsageLimits | null;
   items: TranscriptItem[];
 }
@@ -146,6 +189,8 @@ export function createSessionState(): SessionState {
     agentSessionId: null,
     model: null,
     permissionMode: null,
+    availableModels: null,
+    availableModes: null,
     usageLimits: null,
     items: [],
   };

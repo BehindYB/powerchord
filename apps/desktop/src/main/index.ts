@@ -3,6 +3,7 @@ import { PowerChordMcpServer } from '@powerchord/core';
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron';
 import { IpcChannel, type AppInfo } from '../shared/ipc';
 import { registerAgentHandlers } from './agents';
+import { registerApiKeyHandlers } from './api-keys';
 import { HubManager } from './hub';
 import { registerModelHandlers } from './models';
 import { applySavedTheme, registerPreferenceHandlers } from './preferences';
@@ -94,6 +95,7 @@ function registerIpcHandlers(): void {
   registerAgentHandlers();
   registerModelHandlers();
   registerPreferenceHandlers(hub);
+  registerApiKeyHandlers();
 }
 
 if (!app.requestSingleInstanceLock()) {
