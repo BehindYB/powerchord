@@ -56,6 +56,7 @@ export const IpcChannel = {
   SetApiKey: 'api-keys:set',
   DeleteApiKey: 'api-keys:delete',
   ListApiModels: 'api:list-models',
+  ListClaudeModels: 'claude:list-models',
   GetUsage: 'usage:get',
   SetBudgets: 'usage:set-budgets',
   UsageChanged: 'usage:changed',
@@ -124,6 +125,7 @@ export interface ModelOption {
   label: string;
 }
 
+/** Used until Claude Code reports its own list, or when it cannot be asked. */
 export const CLAUDE_MODELS: readonly ModelOption[] = [
   { id: null, label: 'Default' },
   { id: 'fable', label: 'Fable' },
@@ -409,6 +411,8 @@ export interface PowerChordApi {
   deleteApiKey(provider: ApiProviderId): Promise<void>;
   /** Chat models of a provider whose key is configured. */
   listApiModels(provider: ApiProviderId): Promise<ApiModelInfo[]>;
+  /** Models the installed Claude Code offers, with the default first; cached for a while. */
+  listClaudeModels(): Promise<ModelOption[]>;
   getUsage(): Promise<UsageOverview>;
   setBudgets(budgets: Budgets): Promise<void>;
   onUsageChanged(listener: (usage: UsageOverview) => void): () => void;

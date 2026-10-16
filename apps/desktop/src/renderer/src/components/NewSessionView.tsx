@@ -2,7 +2,6 @@ import type { PermissionMode } from '@powerchord/core/sessions';
 import { useState } from 'react';
 import {
   API_PROVIDERS,
-  CLAUDE_MODELS,
   CODEX_MODE_OPTIONS,
   PERMISSION_MODES,
   SESSION_AGENT_NAMES,
@@ -13,7 +12,7 @@ import {
   type SessionAgentId,
 } from '../../../shared/ipc';
 import { useAgents } from '../hooks/useAgents';
-import { formatUsd, useApiKeys, useApiModels } from '../hooks/useApi';
+import { formatUsd, useApiKeys, useApiModels, useClaudeModels } from '../hooks/useApi';
 import { useModelEndpoints } from '../hooks/useModelEndpoints';
 import { Composer, Picker } from './Composer';
 
@@ -300,13 +299,14 @@ function AgentPickers(props: {
 }) {
   const agentId: CodingAgentId | null =
     props.agentId === 'local-model' || props.agentId === 'api-model' ? null : props.agentId;
+  const claudeModels = useClaudeModels();
   if (agentId === 'claude-code') {
     return (
       <>
         <Picker
           label="Model"
           value={props.claudeModel}
-          options={CLAUDE_MODELS}
+          options={claudeModels}
           onChange={props.onClaudeModel}
         />
         <Picker<PermissionMode>

@@ -48,6 +48,12 @@ export { createSessionState, parseAgentQuestions, QUESTION_TOOL_NAME } from './s
 export { applySessionEvent, settleSessionState } from './sessions/transcript.ts';
 export { ClaudeStreamParser } from './sessions/claude-code/parser.ts';
 export {
+  listClaudeCodeModels,
+  parseClaudeCodeModels,
+  type ClaudeCodeModelQuery,
+  type ClaudeCodeModels,
+} from './sessions/claude-code/models.ts';
+export {
   ClaudeCodeSession,
   type ClaudeCodeSessionOptions,
 } from './sessions/claude-code/session.ts';

@@ -5,6 +5,7 @@ import { IpcChannel, type AppInfo } from '../shared/ipc';
 import { registerAgentHandlers } from './agents';
 import { registerApiKeyHandlers } from './api-keys';
 import { registerApiModelHandlers } from './api-models';
+import { registerClaudeModelHandlers } from './claude-models';
 import { HubManager } from './hub';
 import { registerModelHandlers } from './models';
 import { applySavedTheme, registerPreferenceHandlers } from './preferences';
@@ -99,6 +100,7 @@ function registerIpcHandlers(): void {
   registerPreferenceHandlers(hub);
   registerApiKeyHandlers();
   registerApiModelHandlers();
+  registerClaudeModelHandlers();
   registerUsageHandlers();
 }
 

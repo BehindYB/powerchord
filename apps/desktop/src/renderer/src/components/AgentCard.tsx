@@ -53,7 +53,11 @@ export function AgentCard({ agent, output, onInstall, onSignIn }: AgentCardProps
     setMessage(null);
     try {
       await onSignIn();
-      setMessage('A terminal window opened with the sign-in flow. Refresh when you are done.');
+      setMessage(
+        agent.integration === 'launch-only'
+          ? `${agent.displayName} opened in a terminal window.`
+          : 'A terminal window opened with the sign-in flow. Refresh when you are done.',
+      );
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : String(cause));
     }

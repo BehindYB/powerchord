@@ -73,6 +73,7 @@ const api: PowerChordApi = {
   setApiKey: (provider, key) => ipcRenderer.invoke(IpcChannel.SetApiKey, provider, key),
   deleteApiKey: (provider) => ipcRenderer.invoke(IpcChannel.DeleteApiKey, provider),
   listApiModels: (provider) => ipcRenderer.invoke(IpcChannel.ListApiModels, provider),
+  listClaudeModels: () => ipcRenderer.invoke(IpcChannel.ListClaudeModels),
   getUsage: () => ipcRenderer.invoke(IpcChannel.GetUsage),
   setBudgets: (budgets) => ipcRenderer.invoke(IpcChannel.SetBudgets, budgets),
   onUsageChanged: (listener) => subscribe<UsageOverview>(IpcChannel.UsageChanged, listener),

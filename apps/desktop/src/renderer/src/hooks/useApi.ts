@@ -1,5 +1,32 @@
 import { useEffect, useState } from 'react';
-import type { ApiKeyInfo, ApiModelInfo, ApiProviderId, UsageOverview } from '../../../shared/ipc';
+import {
+  CLAUDE_MODELS,
+  type ApiKeyInfo,
+  type ApiModelInfo,
+  type ApiProviderId,
+  type ModelOption,
+  type UsageOverview,
+} from '../../../shared/ipc';
+
+/** Models the installed Claude Code offers; the built-in aliases until it answers. */
+export function useClaudeModels(): readonly ModelOption[] {
+  const [models, setModels] = useState<readonly ModelOption[]>(CLAUDE_MODELS);
+  useEffect(() => {
+    let cancelled = false;
+    window.powerchord.listClaudeModels().then(
+      (value) => {
+        if (!cancelled) setModels(value);
+      },
+      () => {
+        // Claude Code is missing or did not answer; the aliases still work.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return models;
+}
 
 /** Which providers have a stored key; null while loading. */
 export function useApiKeys(): ApiKeyInfo[] | null {

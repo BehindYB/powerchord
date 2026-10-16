@@ -29,7 +29,6 @@ import {
 } from '@powerchord/core';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import {
-  CLAUDE_MODELS,
   IpcChannel,
   PERMISSION_MODES,
   SESSION_AGENT_NAMES,
@@ -74,8 +73,9 @@ function isPermissionMode(value: unknown): value is PermissionMode {
   return PERMISSION_MODES.some((mode) => mode.id === value);
 }
 
+/** Aliases such as `opus` or versions such as `claude-opus-4-8`; Claude Code validates the rest. */
 function isClaudeModel(value: unknown): value is string | null {
-  return CLAUDE_MODELS.some((model) => model.id === value);
+  return value === null || (typeof value === 'string' && /^[\w.[\]-]{1,128}$/.test(value));
 }
 
 function isModelName(value: unknown): value is string {

@@ -6,7 +6,6 @@ import type {
 } from '@powerchord/core/sessions';
 import { useEffect, useRef, useState } from 'react';
 import {
-  CLAUDE_MODELS,
   CODEX_MODE_OPTIONS,
   PERMISSION_MODES,
   SESSION_AGENT_NAMES,
@@ -15,7 +14,7 @@ import {
   type ModelOption,
   type SessionSummary,
 } from '../../../shared/ipc';
-import { formatUsd, useApiModels, useUsage } from '../hooks/useApi';
+import { formatUsd, useApiModels, useClaudeModels, useUsage } from '../hooks/useApi';
 import { useModelEndpoints } from '../hooks/useModelEndpoints';
 import { useSessionState } from '../hooks/useSessions';
 import { Composer, Picker } from './Composer';
@@ -47,8 +46,14 @@ function modelOptions(
   state: SessionState | null,
   localModels: string[],
   apiModels: ApiModelInfo[] | null,
+  claudeModels: readonly ModelOption[],
 ): readonly ModelOption[] {
-  if (summary.agentId === 'claude-code') return CLAUDE_MODELS;
+  if (summary.agentId === 'claude-code') {
+    if (summary.model === null || claudeModels.some((option) => option.id === summary.model)) {
+      return claudeModels;
+    }
+    return [...claudeModels, { id: summary.model, label: summary.model }];
+  }
   if (summary.agentId === 'api-model') {
     const options: ModelOption[] = (apiModels ?? []).map(({ id, label }) => ({ id, label }));
     if (summary.model && !options.some((option) => option.id === summary.model)) {
@@ -128,6 +133,7 @@ export function SessionView({
 }) {
   const state = useSessionState(summary.id);
   const { endpoints } = useModelEndpoints();
+  const claudeModels = useClaudeModels();
   const isLocal = summary.agentId === 'local-model' || summary.agentId === 'api-model';
   const { models: apiModels } = useApiModels(
     summary.agentId === 'api-model' ? summary.provider : null,
@@ -282,7 +288,7 @@ export function SessionView({
             <Picker
               label="Model"
               value={summary.model}
-              options={modelOptions(summary, state, localModels, apiModels)}
+              options={modelOptions(summary, state, localModels, apiModels, claudeModels)}
               onChange={(model) =>
                 void run(window.powerchord.updateSessionSettings(summary.id, { model }))
               }

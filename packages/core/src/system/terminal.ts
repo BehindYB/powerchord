@@ -37,6 +37,21 @@ function launchDetached(
   });
 }
 
+function runHidden(
+  file: string,
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv },
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { ...options, windowsHide: true, stdio: 'ignore' });
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Could not open a terminal window (exit code ${code}).`));
+    });
+  });
+}
+
 export interface TerminalLaunchOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
@@ -54,8 +69,19 @@ export function openInTerminal(spec: CommandSpec, options: TerminalLaunchOptions
 
   if (platform === 'win32') {
     const commandLine = ['&', quotePowerShell(spec.command), ...spec.args].join(' ');
-    // A detached console process on Windows receives its own console window.
-    return launchDetached('powershell.exe', ['-NoExit', '-Command', commandLine], launchOptions);
+    // A detached process gets no console on Windows, so a hidden PowerShell asks Windows to
+    // open a new console window instead. The command travels base64-encoded to avoid quoting.
+    const encoded = Buffer.from(commandLine, 'utf16le').toString('base64');
+    return runHidden(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Start-Process -FilePath powershell.exe -ArgumentList '-NoExit','-EncodedCommand','${encoded}'`,
+      ],
+      launchOptions,
+    );
   }
 
   const shellLine = [
