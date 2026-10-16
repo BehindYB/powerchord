@@ -28,7 +28,8 @@ Last reviewed: 2026-10-14. Re-check the referenced terms before changing an inte
 5. For Codex, PowerChord runs the `codex` binary installed by the user through its documented app-server protocol (`codex app-server`). Codex authenticates with the account the user signed in with `codex login`; PowerChord only reads whether an account is present (`account/read`).
 6. For Gemini CLI, PowerChord runs the `gemini` binary installed by the user in its documented Agent Client Protocol mode (`gemini --acp`) and selects the `gemini-api-key` authentication method the agent advertises, with the user's key in `GEMINI_API_KEY`. Gemini CLI records the selected method in its own settings, as it does when the user chooses it interactively.
 7. Claude Code sessions billed to the user's Anthropic API key run the same binary with `ANTHROPIC_API_KEY` and a separate `CLAUDE_CONFIG_DIR` inside PowerChord's data folder. A signed-in Claude Code keeps using the subscription even when the key is set, so the separate folder, which has no login, is what makes the key take effect. PowerChord never reads that folder.
-8. Vendor agents whose consumer terms prohibit use from third-party applications (currently Antigravity CLI) are not integrated with consumer accounts.
+8. To list the models Claude Code offers, PowerChord sends the binary the same `initialize` control request that the official Claude Agent SDK sends at startup, without a prompt, so no turn runs. The response also describes the signed-in account; PowerChord uses only the model list and discards the rest.
+9. Vendor agents whose consumer terms prohibit use from third-party applications (currently Antigravity CLI) are not integrated with consumer accounts.
 
 ## Agents PowerChord does not drive (Antigravity)
 
