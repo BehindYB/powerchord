@@ -37,6 +37,11 @@ export const IpcChannel = {
   RemoveProject: 'projects:remove',
   OpenProjectFolder: 'projects:open-folder',
   ProjectsChanged: 'projects:changed',
+  GetProjectContext: 'projects:get-context',
+  SaveProjectMemory: 'projects:save-memory',
+  SaveProjectInstructions: 'projects:save-instructions',
+  LinkProjectInstructions: 'projects:link-instructions',
+  ProjectMemoryChanged: 'projects:memory-changed',
   SessionEvent: 'sessions:event',
   SessionsChanged: 'sessions:changed',
   ListModelEndpoints: 'models:list-endpoints',
@@ -197,6 +202,19 @@ export interface ProjectSummary {
   name: string;
   folder: string;
   createdAt: number;
+}
+
+/** A project's memory and the instruction files in its folder. */
+export interface ProjectContext {
+  /** Private memory kept in PowerChord's data folder. */
+  memory: string;
+  instructions: {
+    name: string;
+    exists: boolean;
+    text: string;
+    /** Whether the file imports AGENTS.md. */
+    importsShared: boolean;
+  }[];
 }
 
 export interface SessionSnapshot {
@@ -412,6 +430,13 @@ export interface PowerChordApi {
   removeProject(projectId: string): Promise<boolean>;
   openProjectFolder(projectId: string): Promise<void>;
   onProjectsChanged(listener: (projects: ProjectSummary[]) => void): () => void;
+  getProjectContext(projectId: string): Promise<ProjectContext>;
+  saveProjectMemory(projectId: string, text: string): Promise<void>;
+  /** Writes AGENTS.md in the project folder, asking first when it does not exist yet. */
+  saveProjectInstructions(projectId: string, text: string): Promise<boolean>;
+  /** After confirmation, makes CLAUDE.md or GEMINI.md import AGENTS.md. */
+  linkProjectInstructions(projectId: string, file: 'CLAUDE.md' | 'GEMINI.md'): Promise<boolean>;
+  onProjectMemoryChanged(listener: (projectId: string) => void): () => void;
 
   /** Saved model endpoints, each checked for availability. */
   listModelEndpoints(): Promise<ModelEndpointInfo[]>;

@@ -58,6 +58,10 @@ export interface ModelChatSessionOptions {
   workspace?: ModelChatWorkspace;
   /** Looks up a model's context window; resolves null when it is unknown. */
   contextWindow?: (model: string) => Promise<number | null>;
+  /** Project instructions and memory, added to the system prompt. */
+  projectContext?: string;
+  /** Saves a note to the project memory; when set, chats with a folder get a remember tool. */
+  remember?: (note: string) => Promise<void>;
 }
 
 /**
@@ -135,6 +139,33 @@ interface ToolOutcome {
   isError: boolean;
 }
 
+/** Lets the model add a note to the private project memory, approved like a file change. */
+function rememberTool(remember: (note: string) => Promise<void>): WorkspaceTool {
+  return {
+    access: 'edit',
+    definition: {
+      name: 'remember',
+      description:
+        'Adds a short note to the project memory the user keeps in PowerChord, for later chats ' +
+        'with any agent. Use it for lasting facts the user wants remembered, such as preferences, ' +
+        'conventions or decisions, not for progress updates.',
+      parameters: {
+        type: 'object',
+        properties: {
+          note: { type: 'string', description: 'One self-contained fact, in a sentence or two' },
+        },
+        required: ['note'],
+      },
+    },
+    run: async (input) => {
+      const note = input['note'];
+      if (typeof note !== 'string' || !note.trim()) throw new Error('"note" is required.');
+      await remember(note);
+      return 'Added to the project memory.';
+    },
+  };
+}
+
 function compactionError(error: unknown): string {
   return `Could not compact the conversation: ${error instanceof Error ? error.message : String(error)}`;
 }
@@ -177,9 +208,13 @@ export class ModelChatSession implements AgentSession {
     this.agentSessionId = options.agentSessionId ?? randomUUID();
     this.model = options.model;
     this.mode = options.workspace?.mode ?? null;
-    this.tools = options.workspace ? WORKSPACE_TOOLS : [];
+    const remember = options.remember;
+    this.tools = options.workspace
+      ? [...WORKSPACE_TOOLS, ...(remember ? [rememberTool(remember)] : [])]
+      : [];
     const system = [
       options.workspace ? workspaceSystemPrompt(options.workspace.cwd) : '',
+      options.projectContext ?? '',
       options.systemPrompt ?? '',
     ]
       .filter(Boolean)

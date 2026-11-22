@@ -181,7 +181,11 @@ export class CodexSession implements AgentSession {
     this.threadId = options.resumeThreadId ?? null;
     this.model = options.model;
     this.mode = options.mode;
-    this.mcpHandlers = { label: options.label ?? 'Codex', hub: options.hubTools ?? false };
+    this.mcpHandlers = {
+      label: options.label ?? 'Codex',
+      hub: options.hubTools ?? false,
+      projectFolder: options.cwd,
+    };
     this.registration = options.mcp.register(this.mcpHandlers);
   }
 

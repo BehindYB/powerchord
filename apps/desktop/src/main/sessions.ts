@@ -49,7 +49,8 @@ import {
 import { getApiKey } from './api-keys';
 import { PROVIDER_APIS, providerConnection, providerName } from './api-models';
 import { endpointConnection, findEndpoint } from './models';
-import { ProjectStore } from './projects';
+import type { ProjectMemoryService } from './memory';
+import type { ProjectStore } from './projects';
 import { SessionStore } from './session-store';
 import { getBudgets, isFolderTrusted, trustFolder } from './settings';
 import { monthSpend, recordUsage } from './usage';
@@ -152,11 +153,14 @@ export class SessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly mcp: PowerChordMcpServer;
   private readonly store = new SessionStore();
-  private readonly projects = new ProjectStore();
+  private readonly projects: ProjectStore;
+  private readonly memory: ProjectMemoryService;
 
   /** The MCP server must be started before sessions are created. */
-  constructor(mcp: PowerChordMcpServer) {
+  constructor(mcp: PowerChordMcpServer, projects: ProjectStore, memory: ProjectMemoryService) {
     this.mcp = mcp;
+    this.projects = projects;
+    this.memory = memory;
   }
 
   async start(): Promise<void> {
@@ -220,7 +224,7 @@ export class SessionManager {
         (chats.length > 0
           ? `Its ${chats.length === 1 ? 'chat is' : `${chats.length} chats are`} removed from PowerChord's history. `
           : '') +
-        `The folder ${project.folder} and its files are not touched. Coding agents keep their own records of their conversations.`,
+        `Its private memory is deleted. The folder ${project.folder} and its files, including AGENTS.md, are not touched. Coding agents keep their own records of their conversations.`,
     };
     const { response } = window
       ? await dialog.showMessageBox(window, confirmation)
@@ -232,6 +236,7 @@ export class SessionManager {
       await this.store.delete(session.summary.id);
     }
     await this.projects.remove(project.id);
+    await this.memory.store.remove(project.id);
     this.notifyProjectsChanged();
     this.notifySessionsChanged();
     return true;
@@ -489,9 +494,12 @@ export class SessionManager {
           await mkdir(configDir, { recursive: true });
           env = { ...env, ANTHROPIC_API_KEY: apiKey, CLAUDE_CONFIG_DIR: configDir };
         }
+        // Claude Code reads CLAUDE.md itself; the private project memory is added to its prompt.
+        const memory = await this.memory.agentContext(summary.cwd);
         return new ClaudeCodeSession({
           ...common,
           env,
+          ...(memory ? { appendSystemPrompt: memory } : {}),
           executable: status.path,
           model: summary.model,
           permissionMode: isPermissionMode(summary.permissionMode)
@@ -530,14 +538,19 @@ export class SessionManager {
     const history = chatHistoryFromTranscript(state.items);
     const restored = state.agentSessionId ? { agentSessionId: state.agentSessionId } : {};
     let workspace = {};
-    if (summary.cwd !== null) {
-      await this.checkWorkingFolder(summary.cwd);
+    const folder = summary.cwd;
+    if (folder !== null) {
+      await this.checkWorkingFolder(folder);
+      const projectContext = await this.memory.modelChatContext(folder);
       workspace = {
         workspace: {
-          cwd: summary.cwd,
+          cwd: folder,
           env: buildChildEnv(await resolveSearchPath()),
           mode: isModelChatMode(summary.permissionMode) ? summary.permissionMode : 'ask',
         },
+        ...(projectContext ? { projectContext } : {}),
+        remember: (note: string) =>
+          this.memory.rememberIn(folder, note, agentLabel(session.summary)),
       };
     }
 

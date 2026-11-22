@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SESSION_AGENT_NAMES, type ProjectSummary, type SessionSummary } from '../../../shared/ipc';
+import { ProjectMemory } from './ProjectMemory';
 
 function formatWhen(time: number): string {
   const minutes = Math.round((Date.now() - time) / 60_000);
@@ -145,6 +146,8 @@ export function ProjectView({
             ))}
           </ul>
         )}
+
+        <ProjectMemory project={project} />
       </div>
     </section>
   );

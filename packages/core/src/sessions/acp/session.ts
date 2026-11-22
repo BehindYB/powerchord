@@ -167,6 +167,7 @@ export class AcpSession implements AgentSession {
     this.mcpHandlers = {
       label: options.label ?? options.agentName,
       hub: options.hubTools ?? false,
+      projectFolder: options.cwd,
     };
     this.registration = options.mcp.register(this.mcpHandlers);
   }

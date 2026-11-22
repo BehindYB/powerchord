@@ -76,7 +76,17 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Compaction: the model summarizes the conversation on request, or automatically when a turn reaches 80% of the context window
 - Rules in [COMPLIANCE.md](COMPLIANCE.md#model-chat-tools)
 
+## Phase 9: Projects and memory (done)
+
+- Projects: a folder whose chats are kept together, with any number of chats with any agent or model; existing sessions are grouped by folder
+- Sidebar with expandable projects and loose chats; a project page with its chats, instructions and memory
+- Project instructions in the folder: `AGENTS.md` as the shared file, with optional `@AGENTS.md` imports in `CLAUDE.md` and `GEMINI.md`; model chats receive them in their system prompt
+- Private project memory in PowerChord's data folder, given to model chats and Claude Code at start and available to every agent through the hub tools `read_project_memory` and `remember`
+- Rules in [COMPLIANCE.md](COMPLIANCE.md#project-instructions-and-memory)
+
 ## Next
+
+- Codex and Gemini CLI read the private memory through the hub tools; give it to them at start once their protocols offer a documented way
 
 - Web search for model chats, through a search API the user chooses
 

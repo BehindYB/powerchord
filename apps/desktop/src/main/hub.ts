@@ -13,6 +13,7 @@ import {
   type McpServerStartResult,
   type PowerChordMcpServer,
   type TaskStatus,
+  type ProjectMemoryGateway,
 } from '@powerchord/core';
 import { app, BrowserWindow, clipboard, dialog, ipcMain } from 'electron';
 import {
@@ -59,8 +60,11 @@ export class HubManager {
   private connection: HubConnection | null = null;
   private externalClient: McpClientRegistration | null = null;
 
-  constructor(mcp: PowerChordMcpServer) {
+  private readonly memory: ProjectMemoryGateway;
+
+  constructor(mcp: PowerChordMcpServer, memory: ProjectMemoryGateway) {
     this.mcp = mcp;
+    this.memory = memory;
   }
 
   /** Starts the MCP server on the preferred port and enables the hub tools. */
@@ -77,6 +81,7 @@ export class HubManager {
 
     this.mcp.setHub({
       store: this.store,
+      memory: this.memory,
       models: createLocalModelGateway({
         endpoints: async () =>
           Promise.all(

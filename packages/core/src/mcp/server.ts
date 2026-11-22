@@ -34,6 +34,8 @@ export interface McpClientHandlers {
   requestPermission?: (request: PermissionRequest) => Promise<PermissionDecision>;
   /** Whether the client gets the hub tools. */
   hub?: boolean;
+  /** Working folder of the session, the default project of the memory tools. */
+  projectFolder?: string;
 }
 
 export interface McpClientRegistration {
@@ -220,7 +222,9 @@ export class PowerChordMcpServer {
       );
     }
 
-    if (handlers.hub && this.hub) registerHubTools(server, this.hub, handlers.label);
+    if (handlers.hub && this.hub) {
+      registerHubTools(server, this.hub, handlers.label, handlers.projectFolder ?? null);
+    }
     return server;
   }
 }

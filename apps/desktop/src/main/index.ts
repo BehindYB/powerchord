@@ -7,8 +7,10 @@ import { registerApiKeyHandlers } from './api-keys';
 import { registerApiModelHandlers } from './api-models';
 import { registerClaudeModelHandlers } from './claude-models';
 import { HubManager } from './hub';
+import { ProjectMemoryService } from './memory';
 import { registerModelHandlers } from './models';
 import { applySavedTheme, registerPreferenceHandlers } from './preferences';
+import { ProjectStore } from './projects';
 import { SessionManager } from './sessions';
 import { registerUsageHandlers } from './usage';
 
@@ -16,8 +18,10 @@ const APP_USER_MODEL_ID = 'io.github.behindyb.powerchord';
 const TITLE_BAR_HEIGHT = 40;
 
 const mcp = new PowerChordMcpServer();
-const hub = new HubManager(mcp);
-const sessions = new SessionManager(mcp);
+const projects = new ProjectStore();
+const memory = new ProjectMemoryService(projects);
+const hub = new HubManager(mcp, memory.gateway());
+const sessions = new SessionManager(mcp, projects, memory);
 
 // Must match the `--pc-bg` token in the renderer stylesheet.
 const BACKGROUND = { light: '#f7f7f8', dark: '#18181b' } as const;
@@ -102,6 +106,7 @@ function registerIpcHandlers(): void {
   registerApiModelHandlers();
   registerClaudeModelHandlers();
   registerUsageHandlers();
+  memory.registerHandlers();
 }
 
 if (!app.requestSingleInstanceLock()) {

@@ -134,7 +134,24 @@ export {
   type HubTask,
   type TaskStatus,
 } from './hub/store.ts';
-export type { HubContext, LocalModelGateway, LocalModelInfo } from './hub/tools.ts';
+export type {
+  HubContext,
+  LocalModelGateway,
+  LocalModelInfo,
+  ProjectMemoryGateway,
+} from './hub/tools.ts';
+export {
+  instructionsPrompt,
+  isLinkableInstructionFile,
+  LINKABLE_INSTRUCTION_FILES,
+  linkInstructionFile,
+  readInstructionFiles,
+  SHARED_INSTRUCTIONS_FILE,
+  writeSharedInstructions,
+  type InstructionFile,
+  type LinkableInstructionFile,
+} from './memory/instructions.ts';
+export { MAX_MEMORY_CHARS, memoryPrompt, ProjectMemoryStore } from './memory/project-memory.ts';
 export { createLocalModelGateway, type GatewayEndpoint } from './hub/local-models.ts';
 export { createToken, MCP_SERVER_NAME, type McpServerStartResult } from './mcp/server.ts';
 export { readableErrorMessage } from './system/errors.ts';

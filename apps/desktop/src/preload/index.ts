@@ -53,6 +53,15 @@ const api: PowerChordApi = {
   openProjectFolder: (projectId) => ipcRenderer.invoke(IpcChannel.OpenProjectFolder, projectId),
   onProjectsChanged: (listener) =>
     subscribe<ProjectSummary[]>(IpcChannel.ProjectsChanged, listener),
+  getProjectContext: (projectId) => ipcRenderer.invoke(IpcChannel.GetProjectContext, projectId),
+  saveProjectMemory: (projectId, text) =>
+    ipcRenderer.invoke(IpcChannel.SaveProjectMemory, projectId, text),
+  saveProjectInstructions: (projectId, text) =>
+    ipcRenderer.invoke(IpcChannel.SaveProjectInstructions, projectId, text),
+  linkProjectInstructions: (projectId, file) =>
+    ipcRenderer.invoke(IpcChannel.LinkProjectInstructions, projectId, file),
+  onProjectMemoryChanged: (listener) =>
+    subscribe<string>(IpcChannel.ProjectMemoryChanged, listener),
 
   listModelEndpoints: () => ipcRenderer.invoke(IpcChannel.ListModelEndpoints),
   addModelEndpoint: (baseUrl, name, apiKey) =>

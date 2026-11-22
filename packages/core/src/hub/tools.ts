@@ -29,9 +29,17 @@ export interface LocalModelGateway {
   }): Promise<LocalModelAnswer>;
 }
 
+/** The private memory of PowerChord projects, found by project folder. */
+export interface ProjectMemoryGateway {
+  /** Null when no PowerChord project has this folder. */
+  read(folder: string): Promise<{ project: string; memory: string } | null>;
+  remember(folder: string, note: string, author: string): Promise<{ project: string }>;
+}
+
 export interface HubContext {
   store: HubStore;
   models: LocalModelGateway;
+  memory?: ProjectMemoryGateway;
 }
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
@@ -58,8 +66,16 @@ function taskOverview(task: HubTask) {
 
 const statusSchema = z.enum(TASK_STATUSES as [string, ...string[]]);
 
-/** Registers the hub tools on an MCP server instance for one client. */
-export function registerHubTools(server: McpServer, hub: HubContext, author: string): void {
+/**
+ * Registers the hub tools on an MCP server instance for one client. `projectFolder` is the working
+ * folder of a session PowerChord drives, used when a memory tool is called without a folder.
+ */
+export function registerHubTools(
+  server: McpServer,
+  hub: HubContext,
+  author: string,
+  projectFolder: string | null = null,
+): void {
   server.registerTool(
     'list_local_models',
     {
@@ -224,5 +240,60 @@ export function registerHubTools(server: McpServer, hub: HubContext, author: str
           ),
         ),
       ),
+  );
+
+  const memory = hub.memory;
+  if (!memory) return;
+  const folderFor = (folder: string | undefined): string => {
+    const value = folder ?? projectFolder;
+    if (!value) throw new Error('Pass the absolute path of the project folder.');
+    return value;
+  };
+
+  server.registerTool(
+    'read_project_memory',
+    {
+      description:
+        'Reads the private memory the user keeps in PowerChord for a project: notes about the ' +
+        'project, preferences and decisions to keep in mind. Read it when starting work on a project.',
+      inputSchema: {
+        folder: z
+          .string()
+          .optional()
+          .describe('Absolute path of the project folder; defaults to the current project'),
+      },
+    },
+    (args) =>
+      guarded(async () => {
+        const result = await memory.read(folderFor(args.folder));
+        if (!result) throw new Error('This folder is not a PowerChord project.');
+        return text(
+          result.memory.trim()
+            ? `Memory of ${result.project}:\n\n${result.memory}`
+            : `The memory of ${result.project} is empty.`,
+        );
+      }),
+  );
+
+  server.registerTool(
+    'remember',
+    {
+      description:
+        'Adds a short note to the private memory of a project in PowerChord, for later sessions ' +
+        'with any agent. Use it for lasting facts the user wants remembered, such as preferences, ' +
+        'conventions or decisions, not for progress updates.',
+      inputSchema: {
+        note: z.string().min(1).describe('One self-contained fact, in a sentence or two'),
+        folder: z
+          .string()
+          .optional()
+          .describe('Absolute path of the project folder; defaults to the current project'),
+      },
+    },
+    (args) =>
+      guarded(async () => {
+        const { project } = await memory.remember(folderFor(args.folder), args.note, author);
+        return text(`Added to the memory of ${project}.`);
+      }),
   );
 }

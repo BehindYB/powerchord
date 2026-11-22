@@ -45,6 +45,8 @@ export interface ClaudeCodeSessionOptions {
   hubTools?: boolean;
   /** Author name recorded for hub changes made by this session. */
   label?: string;
+  /** Added to Claude Code's system prompt with its documented `--append-system-prompt` option. */
+  appendSystemPrompt?: string;
 }
 
 interface PendingPermission {
@@ -81,6 +83,7 @@ export class ClaudeCodeSession implements AgentSession {
       label: options.label ?? 'Claude Code',
       requestPermission: (request) => this.requestPermission(request),
       hub: options.hubTools ?? false,
+      projectFolder: options.cwd,
     };
     this.registration = options.mcp.register(this.mcpHandlers);
   }
@@ -199,6 +202,9 @@ export class ClaudeCodeSession implements AgentSession {
       '--permission-prompt-tool',
       `mcp__${MCP_SERVER_NAME}__${PERMISSION_TOOL_NAME}`,
       ...(this.model ? ['--model', this.model] : []),
+      ...(this.options.appendSystemPrompt
+        ? ['--append-system-prompt', this.options.appendSystemPrompt]
+        : []),
     ];
   }
 

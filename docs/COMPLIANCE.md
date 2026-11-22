@@ -50,6 +50,13 @@ The MCP server lets any agent, whether driven by PowerChord or used directly by 
 3. The server listens only on loopback HTTP and is never exposed to the network. Every client authenticates with a bearer token: each PowerChord-driven session gets its own, passed through the agent's documented MCP configuration (a Claude Code `--mcp-config`, an ACP `mcpServers` entry, or a Codex configuration override that reads the token from an environment variable), and agents the user registers the hub in share a per-install token kept in PowerChord's settings.
 4. Tool calls follow each agent's own approval settings; PowerChord does not ask users to auto-approve its tools.
 
+## Project instructions and memory
+
+1. PowerChord reads the instruction files in a project folder (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) to give them to model chats, which have no such file of their own. Coding agents read their own files as usual. PowerChord never reads the agents' user-level configuration or memory (`~/.claude/`, `~/.codex/`, `~/.gemini/`).
+2. PowerChord writes to the project folder only when the user asks, and asks for confirmation first: it creates or saves `AGENTS.md`, or adds an `@AGENTS.md` import line to `CLAUDE.md` or `GEMINI.md` while keeping their content.
+3. The private memory of a project is stored in PowerChord's data folder, never in the project folder. PowerChord gives it to model chats in their system prompt and to Claude Code through its documented `--append-system-prompt` option. Every agent can read it and add notes through the hub tools `read_project_memory` and `remember`, which follow each agent's own approval settings; model chats ask before adding a note unless their mode allows file changes.
+4. Memory is the user's context about a project, which the user can read and edit at any time. Like the other hub tools, the memory tools never give agents instructions on PowerChord's behalf.
+
 ## Network discovery
 
 PowerChord can look for model servers (Ollama, LM Studio, llama.cpp, vLLM and similar) on the user's networks. To keep this a convenience rather than a scanner:

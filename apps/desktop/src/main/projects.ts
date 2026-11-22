@@ -102,12 +102,14 @@ export class ProjectStore {
     const file: ProjectsFile = { version: FORMAT_VERSION, projects: this.projects };
     const text = JSON.stringify(file, null, 2);
     // Writes are queued and atomic, so a crash never leaves half a file.
-    this.writes = this.writes.then(async () => {
+    const write = this.writes.then(async () => {
       await mkdir(dirname(this.path), { recursive: true });
       const temporary = `${this.path}.tmp`;
       await writeFile(temporary, text, 'utf8');
       await rename(temporary, this.path);
     });
-    return this.writes;
+    // A failed write is reported to its caller without blocking later ones.
+    this.writes = write.catch(() => undefined);
+    return write;
   }
 }

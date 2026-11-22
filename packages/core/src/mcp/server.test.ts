@@ -193,6 +193,46 @@ describe('hub tools', () => {
     expect(missing).toEqual({ text: 'No task with id nope', isError: true });
   });
 
+  it('read and add to project memory, by session folder or by explicit folder', async () => {
+    const memories = new Map<string, string>([['C:\\work\\app', '- Uses pnpm\n']]);
+    server.setHub({
+      store: new HubStore(join(directory, 'hub.json')),
+      models,
+      memory: {
+        read: async (folder) => {
+          const memory = memories.get(folder);
+          return memory === undefined ? null : { project: 'app', memory };
+        },
+        remember: async (folder, note, author) => {
+          if (!memories.has(folder)) throw new Error('This folder is not a PowerChord project.');
+          memories.set(folder, `${memories.get(folder)}- ${note} (${author})\n`);
+          return { project: 'app' };
+        },
+      },
+    });
+    const session = server.register({
+      label: 'Codex',
+      hub: true,
+      projectFolder: 'C:\\work\\app',
+    });
+    const external = server.register({ label: 'Antigravity', hub: true });
+
+    expect(await callTool(session, 'remember', { note: 'Deploys on Fridays' })).toEqual({
+      text: 'Added to the memory of app.',
+      isError: false,
+    });
+    expect(
+      (await callTool(external, 'read_project_memory', { folder: 'C:\\work\\app' })).text,
+    ).toBe('Memory of app:\n\n- Uses pnpm\n- Deploys on Fridays (Codex)\n');
+    expect(await callTool(external, 'read_project_memory', {})).toEqual({
+      text: 'Pass the absolute path of the project folder.',
+      isError: true,
+    });
+    expect(
+      await callTool(external, 'remember', { note: 'x', folder: 'C:\\elsewhere' }),
+    ).toMatchObject({ isError: true });
+  });
+
   it('delegate prompts to local models', async () => {
     server.setHub({ store: new HubStore(join(directory, 'hub.json')), models });
     const client = server.register({ label: 'Claude Code', hub: true });
