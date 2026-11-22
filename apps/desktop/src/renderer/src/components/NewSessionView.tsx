@@ -13,6 +13,7 @@ import {
   type ClaudeBilling,
   type CodingAgentId,
   type CreateSessionRequest,
+  type ProjectSummary,
   type SessionAgentId,
 } from '../../../shared/ipc';
 import { useAgents } from '../hooks/useAgents';
@@ -21,6 +22,9 @@ import { useModelEndpoints } from '../hooks/useModelEndpoints';
 import { Composer, Picker } from './Composer';
 
 interface NewSessionViewProps {
+  projects: ProjectSummary[];
+  /** Project the chat starts in; the user can pick another one. */
+  projectId?: string | undefined;
   onCreated: (sessionId: string) => void;
   onOpenAgents: () => void;
   onOpenModels: () => void;
@@ -34,6 +38,9 @@ const AGENT_CHOICES: readonly SessionAgentId[] = [
   'local-model',
   'api-model',
 ];
+
+/** Select value that opens the folder dialog instead of choosing a project. */
+const CHOOSE_FOLDER = '__choose-folder';
 
 const BILLING_OPTIONS: readonly { id: ClaudeBilling; label: string }[] = [
   { id: 'subscription', label: 'Subscription' },
@@ -49,6 +56,8 @@ function LinkButton({ onClick, children }: { onClick: () => void; children: stri
 }
 
 export function NewSessionView({
+  projects,
+  projectId,
   onCreated,
   onOpenAgents,
   onOpenModels,
@@ -65,7 +74,9 @@ export function NewSessionView({
     endpoints?.filter((endpoint) => endpoint.online && endpoint.models.length > 0) ?? [];
 
   const [agentId, setAgentId] = useState<SessionAgentId>('claude-code');
-  const [cwd, setCwd] = useState<string | null>(null);
+  const [projectChoice, setProjectChoice] = useState<string | null>(projectId ?? null);
+  const project = projects.find((entry) => entry.id === projectChoice) ?? null;
+  const cwd = project?.folder ?? null;
   const [claudeModel, setClaudeModel] = useState<string | null>(null);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   const [codexMode, setCodexMode] = useState<string>('auto');
@@ -107,8 +118,8 @@ export function NewSessionView({
   }
 
   const chooseFolder = async () => {
-    const folder = await window.powerchord.chooseWorkingDirectory();
-    if (folder) setCwd(folder);
+    const created = await window.powerchord.createProject();
+    if (created) setProjectChoice(created.id);
   };
 
   const buildRequest = (): CreateSessionRequest | null => {
@@ -145,7 +156,7 @@ export function NewSessionView({
     placeholder =
       isCodingAgent || cwd !== null ? `Describe a task for ${agentName}` : 'Message the model';
   } else if (isCodingAgent) {
-    placeholder = 'Choose a folder to start';
+    placeholder = 'Choose a project to start';
   } else if (agentId === 'api-model') {
     placeholder = configuredProviders.length > 0 ? 'Loading models…' : 'Add an API key to start';
   } else {
@@ -154,7 +165,9 @@ export function NewSessionView({
 
   return (
     <section className="flex flex-1 flex-col items-center justify-center px-6 pb-16">
-      <h1 className="text-3xl font-semibold tracking-tight">What are we working on?</h1>
+      <h1 className="text-3xl font-semibold tracking-tight">
+        {project ? `New chat in ${project.name}` : 'What are we working on?'}
+      </h1>
 
       <div className="mt-8 w-full max-w-2xl">
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
@@ -171,24 +184,29 @@ export function NewSessionView({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => void chooseFolder()}
-            className="max-w-full min-w-0 truncate rounded-lg border border-border bg-elevated px-3 py-1.5 hover:bg-hover"
-            title={cwd ?? undefined}
-          >
-            {cwd ?? (isCodingAgent ? 'Choose folder…' : 'Project folder (optional)…')}
-          </button>
-          {!isCodingAgent && cwd !== null && (
-            <button
-              type="button"
-              onClick={() => setCwd(null)}
-              className="rounded-lg px-2 py-1.5 text-muted hover:bg-hover hover:text-text"
-              title="Chat without a project folder"
+          <label className="flex min-w-0 items-center gap-1.5">
+            <span className="sr-only">Project</span>
+            <select
+              value={projectChoice ?? ''}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === CHOOSE_FOLDER) void chooseFolder();
+                else setProjectChoice(value || null);
+              }}
+              title={cwd ?? undefined}
+              className="max-w-64 min-w-0 truncate rounded-lg border border-border bg-elevated px-2 py-1.5 hover:bg-hover"
             >
-              No folder
-            </button>
-          )}
+              <option value="">
+                {isCodingAgent ? 'Choose a project…' : 'No project (chat only)'}
+              </option>
+              {projects.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.name}
+                </option>
+              ))}
+              <option value={CHOOSE_FOLDER}>New project from a folder…</option>
+            </select>
+          </label>
         </div>
 
         {agent && !agent.installed && (
@@ -239,8 +257,8 @@ export function NewSessionView({
         {!isCodingAgent && (
           <p className="mb-3 text-xs text-muted">
             {cwd === null
-              ? 'Without a project folder the model can only chat: it cannot see your files or the web.'
-              : 'The model can read and change files in this folder, run commands and fetch web pages. The mode decides what it does without asking.'}
+              ? 'Without a project the model can only chat: it cannot see your files or the web.'
+              : 'The model can read and change files in the project folder, run commands and fetch web pages. The mode decides what it does without asking.'}
           </p>
         )}
         {agentId === 'local-model' && endpoints && onlineEndpoints.length === 0 && (

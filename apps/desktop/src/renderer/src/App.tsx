@@ -3,9 +3,11 @@ import { AgentsView } from './components/AgentsView';
 import { HubView } from './components/HubView';
 import { ModelsView } from './components/ModelsView';
 import { NewSessionView } from './components/NewSessionView';
+import { ProjectView } from './components/ProjectView';
 import { SessionView } from './components/SessionView';
 import { SettingsView } from './components/SettingsView';
 import { Sidebar, type View } from './components/Sidebar';
+import { useProjects } from './hooks/useProjects';
 import { useSessionList } from './hooks/useSessions';
 
 /** Sessions that can be shown side by side. */
@@ -17,6 +19,9 @@ export function App() {
   const [focusedPane, setFocusedPane] = useState(0);
   const searchInput = useRef<HTMLInputElement>(null);
   const sessions = useSessionList();
+  const projects = useProjects();
+  const viewedProject =
+    view.kind === 'project' ? projects.find((project) => project.id === view.projectId) : undefined;
 
   // Deleted sessions drop out of the layout.
   const openPanes = panes.filter((id) => sessions.some((session) => session.id === id));
@@ -69,6 +74,17 @@ export function App() {
     content = <HubView />;
   } else if (view.kind === 'settings') {
     content = <SettingsView />;
+  } else if (viewedProject) {
+    content = (
+      <ProjectView
+        key={viewedProject.id}
+        project={viewedProject}
+        sessions={sessions}
+        onNewChat={() => setView({ kind: 'new', projectId: viewedProject.id })}
+        onOpenSession={(id) => openSession(id, false)}
+        onRemoved={() => setView({ kind: 'new' })}
+      />
+    );
   } else if (view.kind === 'session' && openPanes.length > 0) {
     const split = openPanes.length > 1;
     content = (
@@ -92,6 +108,10 @@ export function App() {
   } else {
     content = (
       <NewSessionView
+        // Keyed by project so switching projects starts a fresh form.
+        key={view.kind === 'new' ? (view.projectId ?? 'none') : 'none'}
+        projects={projects}
+        projectId={view.kind === 'new' ? view.projectId : undefined}
         onCreated={(id) => openSession(id, false)}
         onOpenAgents={() => setView({ kind: 'agents' })}
         onOpenModels={() => setView({ kind: 'models' })}
@@ -105,6 +125,7 @@ export function App() {
       <Sidebar
         view={view}
         sessions={sessions}
+        projects={projects}
         openSessions={view.kind === 'session' ? openPanes : []}
         canSplit={openPanes.length > 0 && openPanes.length < MAX_PANES}
         searchInput={searchInput}

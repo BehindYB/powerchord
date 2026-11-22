@@ -41,6 +41,7 @@ import {
   type CreateSessionRequest,
   type ModelChatFolder,
   type OpenTarget,
+  type ProjectSummary,
   type SessionEventMessage,
   type SessionSnapshot,
   type SessionSummary,
@@ -48,6 +49,7 @@ import {
 import { getApiKey } from './api-keys';
 import { PROVIDER_APIS, providerConnection, providerName } from './api-models';
 import { endpointConnection, findEndpoint } from './models';
+import { ProjectStore } from './projects';
 import { SessionStore } from './session-store';
 import { getBudgets, isFolderTrusted, trustFolder } from './settings';
 import { monthSpend, recordUsage } from './usage';
@@ -150,6 +152,7 @@ export class SessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly mcp: PowerChordMcpServer;
   private readonly store = new SessionStore();
+  private readonly projects = new ProjectStore();
 
   /** The MCP server must be started before sessions are created. */
   constructor(mcp: PowerChordMcpServer) {
@@ -157,17 +160,104 @@ export class SessionManager {
   }
 
   async start(): Promise<void> {
-    for (const stored of await this.store.loadAll()) {
-      this.sessions.set(stored.summary.id, {
-        // Sessions saved by earlier versions have no provider.
-        summary: { ...stored.summary, provider: stored.summary.provider ?? null, status: 'idle' },
-        state: settleSessionState(stored.state),
+    await this.projects.load();
+    const stored = await this.store.loadAll();
+    // Oldest first, so projects created for earlier sessions keep their creation order.
+    stored.sort((a, b) => a.summary.createdAt - b.summary.createdAt);
+    for (const { summary, state } of stored) {
+      const session: ManagedSession = {
+        // Sessions saved by earlier versions have no provider or project.
+        summary: {
+          ...summary,
+          provider: summary.provider ?? null,
+          projectId: summary.projectId ?? null,
+          status: 'idle',
+        },
+        state: settleSessionState(state),
         seq: 0,
         agent: null,
         starting: null,
-      });
+      };
+      this.sessions.set(summary.id, session);
+      const { cwd, projectId } = session.summary;
+      if (cwd !== null && (projectId === null || !this.projects.get(projectId))) {
+        // Sessions from before projects existed are grouped by their folder.
+        const project = await this.projects.ensure(cwd, session.summary.createdAt);
+        session.summary = { ...session.summary, projectId: project.id };
+        this.persist(session);
+      }
     }
     this.registerHandlers();
+  }
+
+  private notifyProjectsChanged(): void {
+    broadcast(IpcChannel.ProjectsChanged, this.projects.list());
+  }
+
+  private async createProject(window: BrowserWindow | null): Promise<ProjectSummary | null> {
+    const folder = await this.chooseWorkingDirectory(window);
+    if (folder === null) return null;
+    const project = await this.projects.ensure(folder);
+    this.notifyProjectsChanged();
+    return project;
+  }
+
+  private async removeProject(window: BrowserWindow | null, projectId: unknown): Promise<boolean> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error('Unknown project');
+    const chats = [...this.sessions.values()].filter(
+      (session) => session.summary.projectId === project.id,
+    );
+    const confirmation: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons: ['Remove', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Remove project',
+      message: `Remove "${project.name}" from PowerChord?`,
+      detail:
+        (chats.length > 0
+          ? `Its ${chats.length === 1 ? 'chat is' : `${chats.length} chats are`} removed from PowerChord's history. `
+          : '') +
+        `The folder ${project.folder} and its files are not touched. Coding agents keep their own records of their conversations.`,
+    };
+    const { response } = window
+      ? await dialog.showMessageBox(window, confirmation)
+      : await dialog.showMessageBox(confirmation);
+    if (response !== 0) return false;
+    for (const session of chats) {
+      session.agent?.close();
+      this.sessions.delete(session.summary.id);
+      await this.store.delete(session.summary.id);
+    }
+    await this.projects.remove(project.id);
+    this.notifyProjectsChanged();
+    this.notifySessionsChanged();
+    return true;
+  }
+
+  private registerProjectHandlers(): void {
+    ipcMain.handle(IpcChannel.ListProjects, () => this.projects.list());
+    ipcMain.handle(IpcChannel.CreateProject, (event) =>
+      this.createProject(BrowserWindow.fromWebContents(event.sender)),
+    );
+    ipcMain.handle(IpcChannel.RenameProject, async (_event, projectId: unknown, name: unknown) => {
+      if (typeof projectId !== 'string' || typeof name !== 'string') {
+        throw new Error('Invalid project');
+      }
+      await this.projects.rename(projectId, name);
+      this.notifyProjectsChanged();
+    });
+    ipcMain.handle(IpcChannel.RemoveProject, (event, projectId: unknown) =>
+      this.removeProject(BrowserWindow.fromWebContents(event.sender), projectId),
+    );
+    ipcMain.handle(IpcChannel.OpenProjectFolder, async (_event, projectId: unknown) => {
+      const project = this.projects.get(projectId);
+      if (!project) throw new Error('Unknown project');
+      const error = await shell.openPath(project.folder);
+      if (error) throw new Error(error);
+    });
   }
 
   /** Stops every agent process and writes pending session history. */
@@ -253,6 +343,7 @@ export class SessionManager {
     const now = Date.now();
     const base = {
       id: randomUUID(),
+      projectId: null,
       title: 'New session',
       status: 'idle' as const,
       createdAt: now,
@@ -329,8 +420,15 @@ export class SessionManager {
       this.sessions.delete(summary.id);
       throw error;
     }
+    if (summary.cwd !== null) {
+      // Chats in a folder belong to its project, created on first use.
+      const known = this.projects.list().length;
+      const project = await this.projects.ensure(summary.cwd);
+      session.summary = { ...session.summary, projectId: project.id };
+      if (this.projects.list().length !== known) this.notifyProjectsChanged();
+    }
     this.notifySessionsChanged();
-    return summary;
+    return session.summary;
   }
 
   private agentFor(session: ManagedSession): Promise<SessionAgent> {
@@ -695,6 +793,7 @@ export class SessionManager {
   }
 
   private registerHandlers(): void {
+    this.registerProjectHandlers();
     ipcMain.handle(IpcChannel.ChooseWorkingDirectory, (event) =>
       this.chooseWorkingDirectory(BrowserWindow.fromWebContents(event.sender)),
     );

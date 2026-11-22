@@ -31,6 +31,12 @@ export const IpcChannel = {
   UpdateSessionSettings: 'sessions:update-settings',
   DeleteSession: 'sessions:delete',
   OpenSessionIn: 'sessions:open-in',
+  ListProjects: 'projects:list',
+  CreateProject: 'projects:create',
+  RenameProject: 'projects:rename',
+  RemoveProject: 'projects:remove',
+  OpenProjectFolder: 'projects:open-folder',
+  ProjectsChanged: 'projects:changed',
   SessionEvent: 'sessions:event',
   SessionsChanged: 'sessions:changed',
   ListModelEndpoints: 'models:list-endpoints',
@@ -168,6 +174,8 @@ export interface SessionSummary {
   id: string;
   agentId: SessionAgentId;
   title: string;
+  /** Project the session belongs to; every session with a working folder has one. */
+  projectId: string | null;
   /** Working folder; null for model chats without a project folder, which have no file access. */
   cwd: string | null;
   /** Model endpoint of a local model chat. */
@@ -181,6 +189,14 @@ export interface SessionSummary {
   createdAt: number;
   /** Time of the last message, used to order the session list. */
   lastActiveAt: number;
+}
+
+/** A folder whose chats PowerChord keeps together. */
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  folder: string;
+  createdAt: number;
 }
 
 export interface SessionSnapshot {
@@ -387,6 +403,15 @@ export interface PowerChordApi {
   openSessionIn(sessionId: string, target: OpenTarget): Promise<void>;
   onSessionEvent(listener: (message: SessionEventMessage) => void): () => void;
   onSessionsChanged(listener: (sessions: SessionSummary[]) => void): () => void;
+
+  listProjects(): Promise<ProjectSummary[]>;
+  /** Asks for a folder, trusting it if needed, and returns its project; null when cancelled. */
+  createProject(): Promise<ProjectSummary | null>;
+  renameProject(projectId: string, name: string): Promise<void>;
+  /** Asks for confirmation, then removes the project and its chats from PowerChord. */
+  removeProject(projectId: string): Promise<boolean>;
+  openProjectFolder(projectId: string): Promise<void>;
+  onProjectsChanged(listener: (projects: ProjectSummary[]) => void): () => void;
 
   /** Saved model endpoints, each checked for availability. */
   listModelEndpoints(): Promise<ModelEndpointInfo[]>;

@@ -5,6 +5,7 @@ import {
   type HubState,
   type InstallOutputEvent,
   type PowerChordApi,
+  type ProjectSummary,
   type SessionEventMessage,
   type SessionSummary,
   type UsageOverview,
@@ -44,6 +45,14 @@ const api: PowerChordApi = {
   onSessionEvent: (listener) => subscribe<SessionEventMessage>(IpcChannel.SessionEvent, listener),
   onSessionsChanged: (listener) =>
     subscribe<SessionSummary[]>(IpcChannel.SessionsChanged, listener),
+
+  listProjects: () => ipcRenderer.invoke(IpcChannel.ListProjects),
+  createProject: () => ipcRenderer.invoke(IpcChannel.CreateProject),
+  renameProject: (projectId, name) => ipcRenderer.invoke(IpcChannel.RenameProject, projectId, name),
+  removeProject: (projectId) => ipcRenderer.invoke(IpcChannel.RemoveProject, projectId),
+  openProjectFolder: (projectId) => ipcRenderer.invoke(IpcChannel.OpenProjectFolder, projectId),
+  onProjectsChanged: (listener) =>
+    subscribe<ProjectSummary[]>(IpcChannel.ProjectsChanged, listener),
 
   listModelEndpoints: () => ipcRenderer.invoke(IpcChannel.ListModelEndpoints),
   addModelEndpoint: (baseUrl, name, apiKey) =>
