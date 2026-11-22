@@ -72,6 +72,8 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Local model and API chats can work in a project folder: list, read, search, create and edit files, run commands, and fetch web pages
 - Tool calling over the OpenAI-compatible API (llama.cpp, Ollama, LM Studio, vLLM, OpenAI, Gemini) and Anthropic's Messages API
 - Modes like those of the coding agents: ask before changes, auto edit, full access; approvals for one call or the whole session
+- Context meter for model chats, with the window read from the server (llama.cpp, Ollama, LM Studio) or the provider (Anthropic, Gemini)
+- Compaction: the model summarizes the conversation on request, or automatically when a turn reaches 80% of the context window
 - Rules in [COMPLIANCE.md](COMPLIANCE.md#model-chat-tools)
 
 ## Next

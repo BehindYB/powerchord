@@ -64,7 +64,7 @@ PowerChord can look for model servers (Ollama, LM Studio, llama.cpp, vLLM and si
 
 1. API chats call each provider's public API (Anthropic Messages, OpenAI, Gemini's OpenAI-compatible endpoint) with the key the user entered, never with subscription credentials.
 2. Costs shown in PowerChord are estimates from the providers' published list prices, recorded with a review date in `packages/core/src/models/pricing.ts`. The interface says so wherever it shows them; providers bill by their own records.
-3. PowerChord asks before sending a message past a monthly budget or above the user's per-message threshold. It never sends requests the user did not start; the follow-up requests of a chat that uses tools belong to the turn the user started, which stops after 50 requests or when the user stops it.
+3. PowerChord asks before sending a message past a monthly budget or above the user's per-message threshold. It never sends requests the user did not start; the follow-up requests of a chat that uses tools, and automatic compaction of a chat that reaches 80% of its context window, belong to the turn the user started, which stops after 50 requests or when the user stops it. Compaction the user asks for is confirmed like a message.
 
 ## Model chat tools
 

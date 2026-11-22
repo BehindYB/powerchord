@@ -1,5 +1,6 @@
 import {
   MODEL_CHAT_MODES,
+  type ContextUsage,
   type PermissionBehavior,
   type QuestionAnswers,
   type SessionState,
@@ -37,6 +38,62 @@ function UsagePill({ limits }: { limits: UsageLimits }) {
       className="rounded-full bg-hover px-2 py-0.5 text-xs whitespace-nowrap text-muted"
     >
       Plan usage {text}
+    </span>
+  );
+}
+
+function formatTokens(count: number): string {
+  if (count < 1000) return String(count);
+  return `${(count / 1000).toFixed(count < 10_000 ? 1 : 0)}k`;
+}
+
+/** How full the model's context is, with a button to compact the conversation. */
+function ContextPill({
+  context,
+  canCompact,
+  onCompact,
+}: {
+  context: ContextUsage;
+  canCompact: boolean;
+  onCompact: () => void;
+}) {
+  const { usedTokens, windowTokens } = context;
+  const share = windowTokens ? Math.min(1, usedTokens / windowTokens) : null;
+  const tone =
+    share === null || share < 0.6 ? 'text-muted' : share < 0.8 ? 'text-amber-500' : 'text-red-500';
+  const title =
+    windowTokens === null
+      ? 'Tokens the next request will use, approximately. The model server does not report its context window, so the chat cannot compact itself; use Compact when answers get slow or fail.'
+      : `Tokens the next request will use, out of the model's ${windowTokens.toLocaleString()}-token context window. The chat compacts itself at 80%.`;
+  return (
+    <span className="flex items-center gap-1.5">
+      <span
+        title={title}
+        className={`flex items-center gap-1.5 rounded-full bg-hover px-2 py-0.5 text-xs whitespace-nowrap ${tone}`}
+      >
+        Context {formatTokens(usedTokens)}
+        {windowTokens !== null && share !== null && (
+          <>
+            {' '}
+            / {formatTokens(windowTokens)}
+            <span className="h-1.5 w-10 overflow-hidden rounded-full bg-border">
+              <span
+                className="block h-full rounded-full bg-current"
+                style={{ width: `${Math.round(share * 100)}%` }}
+              />
+            </span>
+          </>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={onCompact}
+        disabled={!canCompact}
+        title="Replace the conversation with a summary written by the model, to free context"
+        className="rounded-lg border border-border px-2.5 py-1 text-xs whitespace-nowrap hover:bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+      >
+        Compact
+      </button>
     </span>
   );
 }
@@ -211,6 +268,13 @@ export function SessionView({
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {isLocal && state?.context && (
+            <ContextPill
+              context={state.context}
+              canCompact={!busy && state.items.some((item) => item.kind === 'user')}
+              onCompact={() => void run(window.powerchord.compactSession(summary.id))}
+            />
+          )}
           <CostPill summary={summary} state={state} />
           {state?.usageLimits && !summary.provider && <UsagePill limits={state.usageLimits} />}
           {summary.cwd !== null && (

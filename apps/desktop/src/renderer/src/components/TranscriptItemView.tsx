@@ -308,6 +308,34 @@ function QuestionView({
   );
 }
 
+/** A divider where the conversation was replaced by a summary, which can be expanded. */
+function CompactionView({ item }: { item: Extract<TranscriptItem, { kind: 'compaction' }> }) {
+  const size = `about ${item.tokensBefore.toLocaleString()} tokens`;
+  const label =
+    item.status === 'running'
+      ? 'Compacting the conversation…'
+      : item.status === 'error'
+        ? 'Compaction failed'
+        : `Conversation compacted${item.automatic ? ' automatically' : ''} (was ${size})`;
+  return (
+    <div className="text-xs text-muted">
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-border" />
+        <span className={item.status === 'running' ? 'animate-pulse' : ''}>{label}</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      {item.summary && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-center select-none">Show summary</summary>
+          <div className="mt-2 rounded-lg border border-border bg-elevated px-3 py-2 text-sm text-text">
+            <Markdown text={item.summary} />
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function formatCost(amount: number): string {
   return amount < 0.01 ? `$${amount.toFixed(4)}` : `$${amount.toFixed(2)}`;
 }
@@ -391,6 +419,8 @@ export function TranscriptItemView({
     }
     case 'interrupted':
       return <p className="text-xs text-muted">Interrupted</p>;
+    case 'compaction':
+      return <CompactionView item={item} />;
     case 'error':
       return (
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm whitespace-pre-wrap select-text">

@@ -12,6 +12,9 @@ import {
   createSessionState,
   detectAgent,
   estimateCost,
+  fetchAnthropicContextWindow,
+  fetchGeminiContextWindow,
+  fetchServerContextWindow,
   findPrice,
   getAgent,
   isCodexMode,
@@ -443,10 +446,18 @@ export class SessionManager {
     if (summary.agentId === 'api-model') {
       const provider = summary.provider;
       if (!isApiProvider(provider)) throw new Error('This chat has no provider.');
+      const connection = await providerConnection(provider);
       return new ModelChatSession({
-        endpoint: await providerConnection(provider),
+        endpoint: connection,
         protocol: PROVIDER_APIS[provider].protocol,
         priceFor: (model) => findPrice(provider, model),
+        // OpenAI does not publish context windows through its API.
+        contextWindow: async (model) =>
+          provider === 'anthropic'
+            ? fetchAnthropicContextWindow(connection, model)
+            : provider === 'gemini' && connection.apiKey
+              ? fetchGeminiContextWindow(connection.apiKey, model)
+              : null,
         model: summary.model,
         history,
         ...restored,
@@ -457,8 +468,10 @@ export class SessionManager {
 
     const endpoint = summary.endpointId ? await findEndpoint(summary.endpointId) : undefined;
     if (!endpoint) throw new Error('The model server of this chat was removed.');
+    const connection = await endpointConnection(endpoint);
     return new ModelChatSession({
-      endpoint: await endpointConnection(endpoint),
+      endpoint: connection,
+      contextWindow: (model) => fetchServerContextWindow(connection, model),
       model: summary.model,
       history,
       ...restored,
@@ -575,6 +588,18 @@ export class SessionManager {
     agent.send(text);
   }
 
+  private async compact(window: BrowserWindow | null, session: ManagedSession): Promise<void> {
+    const { agentId } = session.summary;
+    if (agentId !== 'local-model' && agentId !== 'api-model') {
+      throw new Error('Coding agents manage their own context.');
+    }
+    // The summary request resends the whole conversation, so it costs about as much as a message.
+    if (!(await this.confirmCost(window, session, ''))) throw new Error('Not compacted.');
+    const agent = await this.agentFor(session);
+    if (!agent.compact) throw new Error('This session cannot be compacted.');
+    agent.compact();
+  }
+
   private async delete(window: BrowserWindow | null, session: ManagedSession): Promise<boolean> {
     const { agentId } = session.summary;
     const agentName = SESSION_AGENT_NAMES[agentId];
@@ -689,6 +714,9 @@ export class SessionManager {
     ipcMain.handle(IpcChannel.InterruptSession, (_event, sessionId: unknown) => {
       this.require(sessionId).agent?.interrupt();
     });
+    ipcMain.handle(IpcChannel.CompactSession, (event, sessionId: unknown) =>
+      this.compact(BrowserWindow.fromWebContents(event.sender), this.require(sessionId)),
+    );
     ipcMain.handle(
       IpcChannel.RespondToPermission,
       (_event, sessionId: unknown, requestId: unknown, behavior: unknown, scope: unknown) => {

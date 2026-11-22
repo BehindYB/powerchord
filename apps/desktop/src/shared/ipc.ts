@@ -25,6 +25,7 @@ export const IpcChannel = {
   GetSession: 'sessions:get',
   SendMessage: 'sessions:send',
   InterruptSession: 'sessions:interrupt',
+  CompactSession: 'sessions:compact',
   RespondToPermission: 'sessions:respond-permission',
   AnswerQuestion: 'sessions:answer-question',
   UpdateSessionSettings: 'sessions:update-settings',
@@ -365,6 +366,11 @@ export interface PowerChordApi {
    */
   sendMessage(sessionId: string, text: string): Promise<void>;
   interruptSession(sessionId: string): Promise<void>;
+  /**
+   * Replaces a model chat's conversation with a summary written by the model, to free context.
+   * Pay-as-you-go chats may first ask the user to confirm the estimated cost.
+   */
+  compactSession(sessionId: string): Promise<void>;
   respondToPermission(
     sessionId: string,
     requestId: string,

@@ -31,6 +31,7 @@ const api: PowerChordApi = {
   getSession: (sessionId) => ipcRenderer.invoke(IpcChannel.GetSession, sessionId),
   sendMessage: (sessionId, text) => ipcRenderer.invoke(IpcChannel.SendMessage, sessionId, text),
   interruptSession: (sessionId) => ipcRenderer.invoke(IpcChannel.InterruptSession, sessionId),
+  compactSession: (sessionId) => ipcRenderer.invoke(IpcChannel.CompactSession, sessionId),
   respondToPermission: (sessionId, requestId, behavior, scope) =>
     ipcRenderer.invoke(IpcChannel.RespondToPermission, sessionId, requestId, behavior, scope),
   updateSessionSettings: (sessionId, settings) =>

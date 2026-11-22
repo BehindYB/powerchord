@@ -31,6 +31,7 @@ export { openInTerminal, type TerminalLaunchOptions } from './system/terminal.ts
 export type {
   AgentQuestion,
   AgentSession,
+  ContextUsage,
   ModelChatMode,
   PermissionBehavior,
   PermissionMode,
@@ -103,6 +104,11 @@ export {
   type ToolCall,
   type ToolDefinition,
 } from './models/openai-compatible.ts';
+export {
+  fetchAnthropicContextWindow,
+  fetchGeminiContextWindow,
+  fetchServerContextWindow,
+} from './models/context.ts';
 export {
   WORKSPACE_TOOLS,
   type ToolAccess,

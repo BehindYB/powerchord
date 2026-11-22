@@ -70,6 +70,8 @@ export interface AgentSession {
   /** Author name for hub changes made by the session. */
   setLabel(label: string): void;
   close(): void;
+  /** Replaces the conversation with a summary to free context; only some agents support it. */
+  compact?(): void;
 }
 
 /** Tool through which Claude Code asks the user multiple-choice questions. */
@@ -126,6 +128,14 @@ export interface UsageLimits {
   sevenDay?: UsageWindow;
 }
 
+/** How much of the model's context the conversation fills. */
+export interface ContextUsage {
+  /** Tokens the next request is expected to use, measured or estimated. */
+  usedTokens: number;
+  /** Size of the model's context window; null when the server does not report it. */
+  windowTokens: number | null;
+}
+
 export interface TurnSummary {
   isError: boolean;
   durationMs: number | null;
@@ -171,6 +181,10 @@ export type SessionEvent =
   | { type: 'turn-complete'; id: string; summary: TurnSummary }
   | { type: 'interrupted'; id: string }
   | { type: 'usage-limits'; limits: UsageLimits }
+  | ({ type: 'context-usage' } & ContextUsage)
+  | { type: 'compaction-start'; id: string; automatic: boolean; tokensBefore: number }
+  /** The summary that replaced the conversation; null when the compaction failed or stopped. */
+  | { type: 'compaction-end'; id: string; summary: string | null }
   | { type: 'error'; id: string; message: string };
 
 export type TranscriptItem =
@@ -195,6 +209,14 @@ export type TranscriptItem =
     }
   | { kind: 'turn-end'; id: string; summary: TurnSummary }
   | { kind: 'interrupted'; id: string }
+  | {
+      kind: 'compaction';
+      id: string;
+      status: 'running' | 'done' | 'error';
+      automatic: boolean;
+      tokensBefore: number;
+      summary: string | null;
+    }
   | { kind: 'error'; id: string; message: string };
 
 export interface SessionState {
@@ -205,6 +227,7 @@ export interface SessionState {
   availableModels: SessionOption[] | null;
   availableModes: SessionOption[] | null;
   usageLimits: UsageLimits | null;
+  context: ContextUsage | null;
   items: TranscriptItem[];
 }
 
@@ -217,6 +240,7 @@ export function createSessionState(): SessionState {
     availableModels: null,
     availableModes: null,
     usageLimits: null,
+    context: null,
     items: [],
   };
 }

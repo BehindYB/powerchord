@@ -1,6 +1,7 @@
 /** Browser-safe entry point: session types and the transcript reducer, without Node.js APIs. */
 export type {
   AgentQuestion,
+  ContextUsage,
   PermissionBehavior,
   QuestionAnswers,
   ModelChatMode,

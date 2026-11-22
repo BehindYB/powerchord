@@ -7,7 +7,7 @@ import {
   type ToolCall,
 } from '../../models/openai-compatible.ts';
 import { streamAnthropicChat } from '../../models/anthropic.ts';
-import { estimateCost, type ModelPrice } from '../../models/pricing.ts';
+import { approximateTokens, estimateCost, type ModelPrice } from '../../models/pricing.ts';
 import {
   isModelChatMode,
   MODEL_CHAT_MODES,
@@ -18,7 +18,16 @@ import {
   type SessionEvent,
   type SessionStatus,
   type TranscriptItem,
+  type TurnSummary,
 } from '../types.ts';
+import {
+  AUTO_COMPACT_AT,
+  cleanSummary,
+  COMPACTED_QUESTION,
+  CONTINUE_NOTE,
+  historyTokens,
+  summaryRequest,
+} from './compaction.ts';
 import { commandShell, needsApproval, WORKSPACE_TOOLS, type WorkspaceTool } from './tools.ts';
 
 /** Model requests in one turn before the session stops a model that keeps calling tools. */
@@ -47,6 +56,8 @@ export interface ModelChatSessionOptions {
   priceFor?: (model: string) => ModelPrice | null;
   /** Project folder; when set, the model can read and change files there and run commands. */
   workspace?: ModelChatWorkspace;
+  /** Looks up a model's context window; resolves null when it is unknown. */
+  contextWindow?: (model: string) => Promise<number | null>;
 }
 
 /**
@@ -73,6 +84,15 @@ export function chatHistoryFromTranscript(items: readonly TranscriptItem[]): Cha
     if (item.kind === 'user') {
       flush();
       question = item.text;
+    } else if (item.kind === 'compaction' && item.status === 'done' && item.summary) {
+      // Everything before a compaction, including earlier answers to the current question,
+      // lives on in its summary.
+      history.length = 0;
+      history.push(
+        { role: 'user', content: COMPACTED_QUESTION },
+        { role: 'assistant', content: item.summary },
+      );
+      answer = [];
     } else if (item.kind === 'text' && question !== null && item.text) {
       answer.push(item.text);
     }
@@ -102,9 +122,21 @@ interface PendingPermission {
   resolve: (behavior: PermissionBehavior) => void;
 }
 
+interface CompactionRequest {
+  automatic: boolean;
+  /** The request of the turn in progress, kept word for word after the summary. */
+  keep: string | null;
+  /** Whether work on `keep` has started, so the summary covers part of it. */
+  inProgress: boolean;
+}
+
 interface ToolOutcome {
   output: string;
   isError: boolean;
+}
+
+function compactionError(error: unknown): string {
+  return `Could not compact the conversation: ${error instanceof Error ? error.message : String(error)}`;
 }
 
 function parseArguments(text: string): Record<string, unknown> | null {
@@ -136,6 +168,9 @@ export class ModelChatSession implements AgentSession {
   private status: SessionStatus = 'idle';
   private controller: AbortController | null = null;
   private closed = false;
+  private windowTokens: number | null = null;
+  /** Tokens the server counted for the history up to `length` messages, after the last reply. */
+  private baseline: { tokens: number; length: number } | null = null;
 
   constructor(options: ModelChatSessionOptions) {
     this.options = options;
@@ -152,7 +187,10 @@ export class ModelChatSession implements AgentSession {
     if (system) this.history.push({ role: 'system', content: system });
     if (options.history) this.history.push(...options.history);
     // Deferred so the owner can finish registering the session before the first event.
-    queueMicrotask(() => this.emitInfo());
+    queueMicrotask(() => {
+      this.emitInfo();
+      void this.refreshContextWindow();
+    });
   }
 
   send(text: string): void {
@@ -171,7 +209,19 @@ export class ModelChatSession implements AgentSession {
   setModel(model: string | null): void {
     if (!model) throw new Error('A model is required');
     this.model = model;
+    // Another model counts tokens differently and may have another window.
+    this.baseline = null;
     this.emitInfo();
+    void this.refreshContextWindow();
+  }
+
+  compact(): void {
+    if (this.closed) throw new Error('Session is closed');
+    if (this.controller) throw new Error('Wait for the current answer or stop it first.');
+    if (this.history.every((message) => message.role === 'system')) {
+      throw new Error('There is nothing to compact yet.');
+    }
+    void this.runCompaction();
   }
 
   setMode(mode: string): void {
@@ -216,6 +266,135 @@ export class ModelChatSession implements AgentSession {
       permissionMode: this.mode,
       ...(this.mode !== null ? { availableModes: [...MODEL_CHAT_MODES] } : {}),
     });
+  }
+
+  private async refreshContextWindow(): Promise<void> {
+    const model = this.model;
+    const lookup = this.options.contextWindow;
+    const size = lookup ? await lookup(model).catch(() => null) : null;
+    if (this.closed || model !== this.model) return;
+    this.windowTokens = size;
+    this.emitContext();
+  }
+
+  /** Tokens the next request will use: measured by the server where possible, else estimated. */
+  private contextEstimate(): number {
+    const baseline = this.baseline;
+    if (baseline && baseline.length <= this.history.length) {
+      return baseline.tokens + historyTokens(this.history.slice(baseline.length));
+    }
+    const tools =
+      this.tools.length > 0
+        ? approximateTokens(JSON.stringify(this.tools.map((tool) => tool.definition)))
+        : 0;
+    return historyTokens(this.history) + tools;
+  }
+
+  private emitContext(): void {
+    this.emit({
+      type: 'context-usage',
+      usedTokens: this.contextEstimate(),
+      windowTokens: this.windowTokens,
+    });
+  }
+
+  private shouldCompact(): boolean {
+    if (this.windowTokens === null) return false;
+    // A history that is just a summary and the current request cannot shrink further.
+    const conversation = this.history.filter((message) => message.role !== 'system').length;
+    return conversation > 3 && this.contextEstimate() >= this.windowTokens * AUTO_COMPACT_AT;
+  }
+
+  /** Replaces the history with a summary written by the model; returns the request's usage. */
+  private async compactHistory(
+    signal: AbortSignal,
+    request: CompactionRequest,
+  ): Promise<ChatUsage> {
+    const id = randomUUID();
+    this.emit({
+      type: 'compaction-start',
+      id,
+      automatic: request.automatic,
+      tokensBefore: this.contextEstimate(),
+    });
+    try {
+      const conversation = this.history.filter((message) => message.role !== 'system');
+      const source =
+        request.keep !== null && !request.inProgress ? conversation.slice(0, -1) : conversation;
+      let text = '';
+      let usage: ChatUsage = { inputTokens: null, outputTokens: null };
+      const stream = (this.options.protocol === 'anthropic' ? streamAnthropicChat : streamChat)(
+        this.options.endpoint,
+        { model: this.model, messages: summaryRequest(source, this.windowTokens) },
+        signal,
+      );
+      for await (const chunk of stream) {
+        if (chunk.type === 'text') text += chunk.text;
+        else if (chunk.type === 'usage') usage = chunk.usage;
+      }
+      const summary = cleanSummary(text);
+      if (!summary) throw new Error('The model returned an empty summary.');
+
+      const compacted: ChatMessage[] = [
+        ...this.history.filter((message) => message.role === 'system'),
+        { role: 'user', content: COMPACTED_QUESTION },
+        { role: 'assistant', content: summary },
+      ];
+      if (request.keep !== null) {
+        compacted.push({
+          role: 'user',
+          content: request.inProgress ? `${request.keep}\n\n${CONTINUE_NOTE}` : request.keep,
+        });
+      }
+      this.history.splice(0, this.history.length, ...compacted);
+      this.baseline = null;
+      this.emit({ type: 'compaction-end', id, summary });
+      this.emitContext();
+      return usage;
+    } catch (error) {
+      this.emit({ type: 'compaction-end', id, summary: null });
+      throw error;
+    }
+  }
+
+  /** A compaction the user asked for, run like a turn so that its cost is recorded. */
+  private async runCompaction(): Promise<void> {
+    const controller = new AbortController();
+    this.controller = controller;
+    this.setStatus('running');
+    const started = Date.now();
+    const complete = (summary: TurnSummary) =>
+      this.emit({ type: 'turn-complete', id: randomUUID(), summary });
+    try {
+      const usage = await this.compactHistory(controller.signal, {
+        automatic: false,
+        keep: null,
+        inProgress: false,
+      });
+      complete({
+        isError: false,
+        durationMs: Date.now() - started,
+        costUsd: this.estimate(usage),
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        if (!this.closed) this.emit({ type: 'interrupted', id: randomUUID() });
+      } else {
+        this.emit({ type: 'error', id: randomUUID(), message: compactionError(error) });
+        complete({
+          isError: true,
+          durationMs: Date.now() - started,
+          costUsd: null,
+          inputTokens: null,
+          outputTokens: null,
+        });
+      }
+    } finally {
+      this.controller = null;
+      this.setStatus(this.closed ? 'stopped' : 'idle');
+    }
   }
 
   private denyPending(): void {
@@ -363,10 +542,24 @@ export class ModelChatSession implements AgentSession {
     this.setStatus('running');
 
     /** Index of this turn's user message, to undo the turn when it produced nothing. */
-    const turnStart = this.history.length - 1;
+    let turnStart = this.history.length - 1;
+    const turnMessage = this.history[turnStart];
+    const request = turnMessage?.role === 'user' ? turnMessage.content : null;
     const started = Date.now();
     const totals = { input: 0, output: 0, cost: 0, complete: true, priced: true };
     const partial = { text: '' };
+
+    const addUsage = (usage: ChatUsage) => {
+      if (usage.inputTokens === null || usage.outputTokens === null) {
+        totals.complete = false;
+        return;
+      }
+      totals.input += usage.inputTokens;
+      totals.output += usage.outputTokens;
+      const cost = this.estimate(usage);
+      if (cost === null) totals.priced = false;
+      else totals.cost += cost;
+    };
 
     const finishTurn = (isError: boolean) => {
       this.emit({
@@ -383,16 +576,26 @@ export class ModelChatSession implements AgentSession {
     };
 
     try {
+      this.emitContext();
       for (let step = 1; ; step++) {
-        const { text, toolCalls, usage } = await this.streamStep(signal, partial);
-        if (usage.inputTokens === null || usage.outputTokens === null) totals.complete = false;
-        else {
-          totals.input += usage.inputTokens;
-          totals.output += usage.outputTokens;
-          const cost = this.estimate(usage);
-          if (cost === null) totals.priced = false;
-          else totals.cost += cost;
+        if (this.shouldCompact()) {
+          try {
+            addUsage(
+              await this.compactHistory(signal, {
+                automatic: true,
+                keep: request,
+                inProgress: step > 1,
+              }),
+            );
+            turnStart = this.history.length - 1;
+          } catch (error) {
+            if (signal.aborted) throw error;
+            // The turn goes on uncompacted; the server reports it if the context overflows.
+            this.emit({ type: 'error', id: randomUUID(), message: compactionError(error) });
+          }
         }
+        const { text, toolCalls, usage } = await this.streamStep(signal, partial);
+        addUsage(usage);
 
         // Providers may leave call ids empty; the transcript needs unique ids either way.
         const calls = toolCalls.map((call) => {
@@ -414,6 +617,14 @@ export class ModelChatSession implements AgentSession {
             : {}),
         });
         partial.text = '';
+        if (usage.inputTokens !== null && usage.outputTokens !== null) {
+          // The reply becomes part of the next prompt, so prompt and reply form the baseline.
+          this.baseline = {
+            tokens: usage.inputTokens + usage.outputTokens,
+            length: this.history.length,
+          };
+        }
+        this.emitContext();
         if (calls.length === 0) break;
 
         for (const [index, { eventId, call }] of calls.entries()) {
@@ -437,6 +648,7 @@ export class ModelChatSession implements AgentSession {
             ...(outcome.isError ? { isError: true } : {}),
           });
         }
+        this.emitContext();
         if (signal.aborted) throw new Error('Stopped by the user.');
         if (step >= MAX_STEPS) {
           this.emit({

@@ -41,6 +41,35 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
     case 'usage-limits':
       return { ...state, usageLimits: { ...state.usageLimits, ...event.limits } };
 
+    case 'context-usage':
+      return {
+        ...state,
+        context: { usedTokens: event.usedTokens, windowTokens: event.windowTokens },
+      };
+
+    case 'compaction-start':
+      return withItems(state, [
+        ...items,
+        {
+          kind: 'compaction',
+          id: event.id,
+          status: 'running',
+          automatic: event.automatic,
+          tokensBefore: event.tokensBefore,
+          summary: null,
+        },
+      ]);
+
+    case 'compaction-end':
+      return withItems(
+        state,
+        replaceItem(items, event.id, (item) =>
+          item.kind === 'compaction'
+            ? { ...item, status: event.summary === null ? 'error' : 'done', summary: event.summary }
+            : item,
+        ),
+      );
+
     case 'user-message':
       return withItems(state, [...items, { kind: 'user', id: event.id, text: event.text }]);
 
@@ -165,6 +194,7 @@ export function settleSessionState(state: SessionState): SessionState {
     // Files saved by earlier versions lack these fields.
     availableModels: state.availableModels ?? null,
     availableModes: state.availableModes ?? null,
+    context: state.context ?? null,
     status: 'idle',
     items: finishOpenItems(state.items),
   };
@@ -181,6 +211,10 @@ function finishOpenItems(items: TranscriptItem[]): TranscriptItem[] {
     if (item.kind === 'permission' && item.status === 'pending') {
       changed = true;
       return { ...item, status: 'deny' };
+    }
+    if (item.kind === 'compaction' && item.status === 'running') {
+      changed = true;
+      return { ...item, status: 'error' };
     }
     if (item.kind === 'tool-call' && item.status === 'running') {
       changed = true;
