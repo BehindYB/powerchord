@@ -31,6 +31,7 @@ export { openInTerminal, type TerminalLaunchOptions } from './system/terminal.ts
 export type {
   AgentQuestion,
   AgentSession,
+  ModelChatMode,
   PermissionBehavior,
   PermissionMode,
   PermissionScope,
@@ -44,7 +45,13 @@ export type {
   UsageLimits,
   UsageWindow,
 } from './sessions/types.ts';
-export { createSessionState, parseAgentQuestions, QUESTION_TOOL_NAME } from './sessions/types.ts';
+export {
+  createSessionState,
+  isModelChatMode,
+  MODEL_CHAT_MODES,
+  parseAgentQuestions,
+  QUESTION_TOOL_NAME,
+} from './sessions/types.ts';
 export { applySessionEvent, settleSessionState } from './sessions/transcript.ts';
 export { ClaudeStreamParser } from './sessions/claude-code/parser.ts';
 export {
@@ -90,9 +97,17 @@ export {
   normalizeBaseUrl,
   streamChat,
   type ChatMessage,
+  type ChatRequest,
   type ChatStreamChunk,
   type ModelEndpoint,
+  type ToolCall,
+  type ToolDefinition,
 } from './models/openai-compatible.ts';
+export {
+  WORKSPACE_TOOLS,
+  type ToolAccess,
+  type WorkspaceTool,
+} from './sessions/model-chat/tools.ts';
 export {
   discoverServers,
   isPrivateAddress,

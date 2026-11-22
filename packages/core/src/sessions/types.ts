@@ -28,6 +28,31 @@ export interface SessionOption {
   description?: string;
 }
 
+/** Modes of model chats that work in a project folder: which tool calls run without asking. */
+export const MODEL_CHAT_MODES = [
+  {
+    id: 'ask',
+    label: 'Ask',
+    description: 'Read files freely; ask before changes, commands and web access',
+  },
+  {
+    id: 'auto-edit',
+    label: 'Auto edit',
+    description: 'Read and change files in the folder; ask before commands and web access',
+  },
+  {
+    id: 'full-access',
+    label: 'Full access',
+    description: 'No approvals. Use only in folders you can restore',
+  },
+] as const satisfies readonly SessionOption[];
+
+export type ModelChatMode = (typeof MODEL_CHAT_MODES)[number]['id'];
+
+export function isModelChatMode(value: unknown): value is ModelChatMode {
+  return MODEL_CHAT_MODES.some((mode) => mode.id === value);
+}
+
 /** Operations PowerChord performs on a running agent session, whatever the agent. */
 export interface AgentSession {
   send(text: string): void;

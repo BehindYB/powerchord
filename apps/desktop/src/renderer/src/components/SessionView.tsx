@@ -1,8 +1,9 @@
-import type {
-  PermissionBehavior,
-  QuestionAnswers,
-  SessionState,
-  UsageLimits,
+import {
+  MODEL_CHAT_MODES,
+  type PermissionBehavior,
+  type QuestionAnswers,
+  type SessionState,
+  type UsageLimits,
 } from '@powerchord/core/sessions';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -80,6 +81,13 @@ function modeOptions(
   }
   if (summary.agentId === 'codex' && summary.permissionMode) {
     return { value: summary.permissionMode, options: CODEX_MODE_OPTIONS };
+  }
+  if (
+    (summary.agentId === 'local-model' || summary.agentId === 'api-model') &&
+    summary.cwd !== null &&
+    summary.permissionMode
+  ) {
+    return { value: summary.permissionMode, options: MODEL_CHAT_MODES };
   }
   const value = summary.permissionMode ?? state?.permissionMode ?? null;
   const options = state?.availableModes;

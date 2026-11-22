@@ -3,6 +3,7 @@ export type {
   AgentQuestion,
   PermissionBehavior,
   QuestionAnswers,
+  ModelChatMode,
   PermissionMode,
   SessionEvent,
   SessionState,
@@ -15,6 +16,8 @@ export type {
 export {
   CLAUDE_PERMISSION_MODES,
   createSessionState,
+  isModelChatMode,
+  MODEL_CHAT_MODES,
   parseAgentQuestions,
   QUESTION_TOOL_NAME,
 } from './types.ts';

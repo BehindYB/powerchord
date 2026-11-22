@@ -15,6 +15,7 @@ import {
   findPrice,
   getAgent,
   isCodexMode,
+  isModelChatMode,
   ModelChatSession,
   openInTerminal,
   resolveSearchPath,
@@ -35,6 +36,7 @@ import {
   type ApiProviderId,
   type CodingAgentId,
   type CreateSessionRequest,
+  type ModelChatFolder,
   type OpenTarget,
   type SessionEventMessage,
   type SessionSnapshot,
@@ -99,6 +101,8 @@ function isApiProvider(value: unknown): value is ApiProviderId {
 const ESTIMATED_OUTPUT_TOKENS = 1000;
 /** Claude Code adds its system prompt and tool definitions to every request. */
 const AGENT_CONTEXT_TOKENS = 20_000;
+/** Instructions and tool definitions of a model chat with a project folder. */
+const MODEL_TOOLS_CONTEXT_TOKENS = 2_500;
 
 function formatUsd(amount: number): string {
   return amount < 0.01 ? `$${amount.toFixed(4)}` : `$${amount.toFixed(2)}`;
@@ -232,6 +236,16 @@ export class SessionManager {
     if (!(await isFolderTrusted(cwd))) throw new Error('The working folder is not trusted.');
   }
 
+  /** Validates the optional project folder of a model chat; the folder must be trusted. */
+  private async modelChatFolder(request: ModelChatFolder): Promise<ModelChatFolder> {
+    if (request.cwd === null) return { cwd: null, permissionMode: null };
+    if (typeof request.cwd !== 'string' || !isModelChatMode(request.permissionMode)) {
+      throw new Error('Invalid session settings');
+    }
+    await this.checkWorkingFolder(request.cwd);
+    return { cwd: request.cwd, permissionMode: request.permissionMode };
+  }
+
   private async create(request: CreateSessionRequest): Promise<SessionSummary> {
     const now = Date.now();
     const base = {
@@ -274,12 +288,11 @@ export class SessionManager {
       if (!endpoint) throw new Error('Unknown model endpoint');
       summary = {
         ...base,
+        ...(await this.modelChatFolder(request)),
         agentId: 'local-model',
-        cwd: null,
         endpointId: endpoint.id,
         provider: null,
         model: request.model,
-        permissionMode: null,
       };
     } else if (request.agentId === 'api-model') {
       if (!isApiProvider(request.provider) || !isModelName(request.model)) {
@@ -287,12 +300,11 @@ export class SessionManager {
       }
       summary = {
         ...base,
+        ...(await this.modelChatFolder(request)),
         agentId: 'api-model',
-        cwd: null,
         endpointId: null,
         provider: request.provider,
         model: request.model,
-        permissionMode: null,
       };
     } else {
       throw new Error('Unsupported agent');
@@ -416,6 +428,17 @@ export class SessionManager {
     if (!summary.model) throw new Error('Choose a model');
     const history = chatHistoryFromTranscript(state.items);
     const restored = state.agentSessionId ? { agentSessionId: state.agentSessionId } : {};
+    let workspace = {};
+    if (summary.cwd !== null) {
+      await this.checkWorkingFolder(summary.cwd);
+      workspace = {
+        workspace: {
+          cwd: summary.cwd,
+          env: buildChildEnv(await resolveSearchPath()),
+          mode: isModelChatMode(summary.permissionMode) ? summary.permissionMode : 'ask',
+        },
+      };
+    }
 
     if (summary.agentId === 'api-model') {
       const provider = summary.provider;
@@ -427,6 +450,7 @@ export class SessionManager {
         model: summary.model,
         history,
         ...restored,
+        ...workspace,
         onEvent,
       });
     }
@@ -438,6 +462,7 @@ export class SessionManager {
       model: summary.model,
       history,
       ...restored,
+      ...workspace,
       onEvent,
     });
   }
@@ -488,7 +513,12 @@ export class SessionManager {
     const budget = budgets.monthlyUsd[provider];
     const model = session.state.model ?? session.summary.model;
     const price = model ? findPrice(provider, model) : null;
-    const contextTokens = session.summary.agentId === 'claude-code' ? AGENT_CONTEXT_TOKENS : 0;
+    const contextTokens =
+      session.summary.agentId === 'claude-code'
+        ? AGENT_CONTEXT_TOKENS
+        : session.summary.cwd !== null
+          ? MODEL_TOOLS_CONTEXT_TOKENS
+          : 0;
     const transcript = session.state.items
       .map((item) => (item.kind === 'user' || item.kind === 'text' ? item.text : ''))
       .join('');
@@ -628,7 +658,9 @@ export class SessionManager {
           ? isPermissionMode(mode)
           : agentId === 'codex'
             ? isCodexMode(mode)
-            : agentId === 'gemini-cli' && isModeName(mode);
+            : agentId === 'gemini-cli'
+              ? isModeName(mode)
+              : session.summary.cwd !== null && isModelChatMode(mode);
       if (!valid) throw new Error('Invalid mode');
       session.agent?.setMode(mode as string);
       session.summary = { ...session.summary, permissionMode: mode as string };

@@ -84,13 +84,100 @@ describe('Anthropic client', () => {
     expect(received.body).toMatchObject({
       model: 'claude-haiku-5-5',
       system: 'Be brief',
-      messages: [{ role: 'user', content: 'Hello' }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
       stream: true,
     });
     expect(chunks).toEqual([
       { type: 'reasoning', text: 'Hmm' },
       { type: 'text', text: 'Hi' },
       { type: 'usage', usage: { inputTokens: 15, outputTokens: 7 } },
+    ]);
+  });
+
+  it('streams tool calls and sends tools and results in the API format', async () => {
+    let body: Record<string, unknown> = {};
+    const baseUrl = await serve((request, response) => {
+      let text = '';
+      request.on('data', (chunk: Buffer) => (text += chunk.toString()));
+      request.on('end', () => {
+        body = JSON.parse(text) as Record<string, unknown>;
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        const events = [
+          { type: 'message_start', message: { usage: { input_tokens: 5 } } },
+          { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'text_delta', text: 'Let me look' },
+          },
+          { type: 'content_block_stop', index: 0 },
+          {
+            type: 'content_block_start',
+            index: 1,
+            content_block: { type: 'tool_use', id: 'toolu_1', name: 'read_file', input: {} },
+          },
+          {
+            type: 'content_block_delta',
+            index: 1,
+            delta: { type: 'input_json_delta', partial_json: '{"path":' },
+          },
+          {
+            type: 'content_block_delta',
+            index: 1,
+            delta: { type: 'input_json_delta', partial_json: '"a.txt"}' },
+          },
+          { type: 'content_block_stop', index: 1 },
+          { type: 'message_delta', usage: { output_tokens: 9 } },
+        ];
+        for (const event of events) response.write(`data: ${JSON.stringify(event)}\n\n`);
+        response.end();
+      });
+    });
+
+    const chunks: ChatStreamChunk[] = [];
+    for await (const chunk of streamAnthropicChat(
+      { baseUrl },
+      {
+        model: 'claude-haiku-5-5',
+        tools: [{ name: 'read_file', description: 'Read', parameters: { type: 'object' } }],
+        messages: [
+          { role: 'user', content: 'Read b' },
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{ id: 'toolu_0', name: 'read_file', arguments: '{"path":"b.txt"}' }],
+          },
+          { role: 'tool', toolCallId: 'toolu_0', content: 'missing', isError: true },
+          { role: 'user', content: 'Now a' },
+        ],
+      },
+    )) {
+      chunks.push(chunk);
+    }
+    expect(body['tools']).toEqual([
+      { name: 'read_file', description: 'Read', input_schema: { type: 'object' } },
+    ]);
+    expect(body['messages']).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'Read b' }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'toolu_0', name: 'read_file', input: { path: 'b.txt' } }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_0', content: 'missing', is_error: true },
+          { type: 'text', text: 'Now a' },
+        ],
+      },
+    ]);
+    expect(chunks).toEqual([
+      { type: 'text', text: 'Let me look' },
+      {
+        type: 'tool-call',
+        call: { id: 'toolu_1', name: 'read_file', arguments: '{"path":"a.txt"}' },
+      },
+      { type: 'usage', usage: { inputTokens: 5, outputTokens: 9 } },
     ]);
   });
 

@@ -64,7 +64,14 @@ PowerChord can look for model servers (Ollama, LM Studio, llama.cpp, vLLM and si
 
 1. API chats call each provider's public API (Anthropic Messages, OpenAI, Gemini's OpenAI-compatible endpoint) with the key the user entered, never with subscription credentials.
 2. Costs shown in PowerChord are estimates from the providers' published list prices, recorded with a review date in `packages/core/src/models/pricing.ts`. The interface says so wherever it shows them; providers bill by their own records.
-3. PowerChord asks before sending a message past a monthly budget or above the user's per-message threshold. It never sends requests the user did not start.
+3. PowerChord asks before sending a message past a monthly budget or above the user's per-message threshold. It never sends requests the user did not start; the follow-up requests of a chat that uses tools belong to the turn the user started, which stops after 50 requests or when the user stops it.
+
+## Model chat tools
+
+1. Local model and API chats can use tools only when the user chooses a project folder for the chat, and only folders the user has trusted.
+2. File tools resolve every path inside that folder and refuse paths that leave it, including through symbolic links. Commands run with the folder as working directory, as the user's own account.
+3. Reading files runs without asking. Changing files, running commands and fetching web pages ask first unless the user picked a mode that allows them; approvals given for the session last until the chat is closed.
+4. Web pages are fetched only with plain GET requests to addresses the model names in a tool call the user can see; PowerChord does not use search engines or other services on the model's behalf.
 
 ## Usage
 

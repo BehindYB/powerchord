@@ -167,7 +167,7 @@ export interface SessionSummary {
   id: string;
   agentId: SessionAgentId;
   title: string;
-  /** Working folder; null for local model chats, which have no file access. */
+  /** Working folder; null for model chats without a project folder, which have no file access. */
   cwd: string | null;
   /** Model endpoint of a local model chat. */
   endpointId: string | null;
@@ -199,8 +199,17 @@ export type CreateSessionRequest =
     }
   | { agentId: 'codex'; cwd: string; model: string | null; permissionMode: string }
   | { agentId: 'gemini-cli'; cwd: string; model: string | null; permissionMode: string | null }
-  | { agentId: 'local-model'; endpointId: string; model: string }
-  | { agentId: 'api-model'; provider: ApiProviderId; model: string };
+  | ({ agentId: 'local-model'; endpointId: string; model: string } & ModelChatFolder)
+  | ({ agentId: 'api-model'; provider: ApiProviderId; model: string } & ModelChatFolder);
+
+/**
+ * Project folder of a model chat. With a folder the model can use files, commands and the web,
+ * asking first as the mode (a `MODEL_CHAT_MODES` id) requires; without one it can only chat.
+ */
+export interface ModelChatFolder {
+  cwd: string | null;
+  permissionMode: string | null;
+}
 
 export interface ApiModelInfo {
   id: string;

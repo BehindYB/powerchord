@@ -67,7 +67,16 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Cost estimates from published list prices, a monthly ledger per provider, monthly budgets and confirmation before messages estimated above a threshold
 - API keys for protected model servers (OS secure storage)
 
+## Phase 8: Tools for model chats (done)
+
+- Local model and API chats can work in a project folder: list, read, search, create and edit files, run commands, and fetch web pages
+- Tool calling over the OpenAI-compatible API (llama.cpp, Ollama, LM Studio, vLLM, OpenAI, Gemini) and Anthropic's Messages API
+- Modes like those of the coding agents: ask before changes, auto edit, full access; approvals for one call or the whole session
+- Rules in [COMPLIANCE.md](COMPLIANCE.md#model-chat-tools)
+
 ## Next
+
+- Web search for model chats, through a search API the user chooses
 
 - Auto-update and code signing once releases are public
 - Evaluate joining OpenAI's "Sign in with ChatGPT" program

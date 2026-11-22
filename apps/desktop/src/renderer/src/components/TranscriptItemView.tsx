@@ -14,8 +14,15 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 }
 
-/** Display name of a tool; MCP tools are named `mcp__<server>__<tool>`. */
+/**
+ * Display name of a tool. MCP tools are named `mcp__<server>__<tool>`; the tools of model chats
+ * use snake_case names such as `read_file`.
+ */
 export function toolDisplayName(name: string): string {
+  if (/^[a-z]+(_[a-z]+)+$/.test(name)) {
+    const words = name.replace(/_/g, ' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
   const match = /^mcp__(.+?)__(.+)$/.exec(name);
   if (!match) return name;
   const [, server, tool] = match;
@@ -90,6 +97,18 @@ function ToolCallView({ item }: { item: Extract<TranscriptItem, { kind: 'tool-ca
   );
 }
 
+/** What a permission prompt shows: the change itself for file edits by model chats. */
+function permissionDetail(name: string, input: unknown): string {
+  const fields = asRecord(input);
+  const text = (key: string) => (typeof fields[key] === 'string' ? fields[key] : '');
+  if (name === 'write_file') return `${text('path')}\n\n${text('content')}`;
+  if (name === 'edit_file') {
+    const scope = fields['replace_all'] === true ? ' (every occurrence)' : '';
+    return `${text('path')}${scope}\n\nReplace:\n${text('old_text')}\n\nWith:\n${text('new_text')}`;
+  }
+  return describeToolInput(name, input) || JSON.stringify(input, null, 2);
+}
+
 function PermissionView({
   item,
   agentName,
@@ -123,7 +142,7 @@ function PermissionView({
         </div>
       ) : (
         <pre className="mt-2 max-h-56 overflow-auto rounded bg-bg p-2 font-mono text-xs whitespace-pre-wrap select-text">
-          {describeToolInput(item.toolName, item.input) || JSON.stringify(item.input, null, 2)}
+          {permissionDetail(item.toolName, item.input)}
         </pre>
       )}
       {item.status === 'pending' ? (

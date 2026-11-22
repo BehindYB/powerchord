@@ -10,10 +10,19 @@ export interface FakeModelServer {
   close(): Promise<void>;
 }
 
+/** One scripted reply; replies are used in order and the last one repeats. */
+export interface FakeReply {
+  reasoning?: string[];
+  answer?: string[];
+  toolCalls?: { id?: string; name: string; arguments: string }[];
+}
+
 export interface FakeModelServerOptions {
   models?: string[];
   reasoning?: string[];
   answer?: string[];
+  /** Scripted replies, overriding `reasoning` and `answer`. */
+  replies?: FakeReply[];
   /** Delay between streamed chunks, in milliseconds. */
   chunkDelayMs?: number;
   /** Port to listen on; a free port by default. */
@@ -26,8 +35,8 @@ export async function startFakeModelServer(
   options: FakeModelServerOptions = {},
 ): Promise<FakeModelServer> {
   const models = options.models ?? ['qwen3:0.6b', 'llama3.2:1b'];
-  const reasoning = options.reasoning ?? [];
-  const answer = options.answer ?? ['Hello', ' there'];
+  const defaultReasoning = options.reasoning ?? [];
+  const defaultAnswer = options.answer ?? ['Hello', ' there'];
   const chatRequests: unknown[] = [];
 
   const server: Server = createServer((request, response) => {
@@ -48,6 +57,10 @@ export async function startFakeModelServer(
       request.on('data', (chunk: Buffer) => chunks.push(chunk));
       request.on('end', async () => {
         chatRequests.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        const scripted =
+          options.replies?.[Math.min(chatRequests.length, options.replies.length) - 1];
+        const reasoning = scripted ? (scripted.reasoning ?? []) : defaultReasoning;
+        const answer = scripted ? (scripted.answer ?? []) : defaultAnswer;
         response.writeHead(200, { 'Content-Type': 'text/event-stream' });
         const send = (payload: unknown) => response.write(`data: ${JSON.stringify(payload)}\n\n`);
         const pause = () =>
@@ -60,6 +73,35 @@ export async function startFakeModelServer(
           if (response.destroyed) return;
           send({ choices: [{ delta: { content: text } }] });
           await pause();
+        }
+        for (const [index, call] of (scripted?.toolCalls ?? []).entries()) {
+          // Split like real servers: the name first, then the arguments in pieces.
+          const half = Math.floor(call.arguments.length / 2);
+          send({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index,
+                      id: call.id ?? `call_${index}`,
+                      type: 'function',
+                      function: { name: call.name, arguments: call.arguments.slice(0, half) },
+                    },
+                  ],
+                },
+              },
+            ],
+          });
+          send({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index, function: { arguments: call.arguments.slice(half) } }],
+                },
+              },
+            ],
+          });
         }
         send({ choices: [], usage: { prompt_tokens: 12, completion_tokens: answer.length } });
         response.end('data: [DONE]\n\n');

@@ -1,4 +1,8 @@
-import type { PermissionMode } from '@powerchord/core/sessions';
+import {
+  MODEL_CHAT_MODES,
+  type ModelChatMode,
+  type PermissionMode,
+} from '@powerchord/core/sessions';
 import { useState } from 'react';
 import {
   API_PROVIDERS,
@@ -65,6 +69,7 @@ export function NewSessionView({
   const [claudeModel, setClaudeModel] = useState<string | null>(null);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   const [codexMode, setCodexMode] = useState<string>('auto');
+  const [modelMode, setModelMode] = useState<ModelChatMode>('ask');
   const [endpointId, setEndpointId] = useState<string | null>(null);
   const [localModel, setLocalModel] = useState<string | null>(null);
   const [billing, setBilling] = useState<ClaudeBilling>('subscription');
@@ -107,11 +112,12 @@ export function NewSessionView({
   };
 
   const buildRequest = (): CreateSessionRequest | null => {
+    const folder = { cwd, permissionMode: cwd === null ? null : modelMode };
     if (agentId === 'local-model') {
-      return endpoint && model ? { agentId, endpointId: endpoint.id, model } : null;
+      return endpoint && model ? { agentId, endpointId: endpoint.id, model, ...folder } : null;
     }
     if (agentId === 'api-model') {
-      return provider && apiModel ? { agentId, provider, model: apiModel.id } : null;
+      return provider && apiModel ? { agentId, provider, model: apiModel.id, ...folder } : null;
     }
     if (!cwd) return null;
     if (agentId === 'claude-code') {
@@ -136,7 +142,8 @@ export function NewSessionView({
 
   let placeholder: string;
   if (ready) {
-    placeholder = isCodingAgent ? `Describe a task for ${agentName}` : 'Message the model';
+    placeholder =
+      isCodingAgent || cwd !== null ? `Describe a task for ${agentName}` : 'Message the model';
   } else if (isCodingAgent) {
     placeholder = 'Choose a folder to start';
   } else if (agentId === 'api-model') {
@@ -164,14 +171,22 @@ export function NewSessionView({
               </button>
             ))}
           </div>
-          {isCodingAgent && (
+          <button
+            type="button"
+            onClick={() => void chooseFolder()}
+            className="max-w-full min-w-0 truncate rounded-lg border border-border bg-elevated px-3 py-1.5 hover:bg-hover"
+            title={cwd ?? undefined}
+          >
+            {cwd ?? (isCodingAgent ? 'Choose folder…' : 'Project folder (optional)…')}
+          </button>
+          {!isCodingAgent && cwd !== null && (
             <button
               type="button"
-              onClick={() => void chooseFolder()}
-              className="max-w-full min-w-0 truncate rounded-lg border border-border bg-elevated px-3 py-1.5 hover:bg-hover"
-              title={cwd ?? undefined}
+              onClick={() => setCwd(null)}
+              className="rounded-lg px-2 py-1.5 text-muted hover:bg-hover hover:text-text"
+              title="Chat without a project folder"
             >
-              {cwd ?? 'Choose folder…'}
+              No folder
             </button>
           )}
         </div>
@@ -221,6 +236,13 @@ export function NewSessionView({
               : 'PowerChord does not know the price of this model; spending estimates leave it out.'}
           </p>
         )}
+        {!isCodingAgent && (
+          <p className="mb-3 text-xs text-muted">
+            {cwd === null
+              ? 'Without a project folder the model can only chat: it cannot see your files or the web.'
+              : 'The model can read and change files in this folder, run commands and fetch web pages. The mode decides what it does without asking.'}
+          </p>
+        )}
         {agentId === 'local-model' && endpoints && onlineEndpoints.length === 0 && (
           <p className="mb-3 text-sm text-muted">
             No reachable model server.{' '}
@@ -254,6 +276,14 @@ export function NewSessionView({
               value={apiModel.id}
               options={apiModels.map((entry) => ({ id: entry.id, label: entry.label }))}
               onChange={setApiModelChoice}
+            />
+          )}
+          {!isCodingAgent && cwd !== null && (
+            <Picker<ModelChatMode>
+              label="Mode"
+              value={modelMode}
+              options={MODEL_CHAT_MODES}
+              onChange={setModelMode}
             />
           )}
           <AgentPickers
