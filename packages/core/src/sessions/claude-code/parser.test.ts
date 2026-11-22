@@ -166,6 +166,61 @@ describe('ClaudeStreamParser', () => {
     expect(parseAll([subagent, 'not json', '{"type":"something_new"}', ''])).toEqual([]);
   });
 
+  it('reports context usage, the context window and compactions', () => {
+    const events = parseAll([
+      JSON.stringify({
+        type: 'system',
+        subtype: 'init',
+        session_id: SESSION,
+        model: 'claude-opus-5-5',
+        permissionMode: 'default',
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        parent_tool_use_id: null,
+        message: {
+          id: 'msg_1',
+          content: [{ type: 'text', text: 'Hi' }],
+          usage: {
+            input_tokens: 10,
+            cache_creation_input_tokens: 2000,
+            cache_read_input_tokens: 30000,
+            output_tokens: 90,
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'result',
+        is_error: false,
+        uuid: 'r1',
+        modelUsage: {
+          'claude-haiku-5-5': { contextWindow: 200000 },
+          'claude-opus-5-5': { contextWindow: 1000000 },
+        },
+      }),
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        uuid: 'c1',
+        compact_metadata: { trigger: 'manual', pre_tokens: 32100 },
+      }),
+    ]);
+    const contexts = events.filter((event) => event.type === 'context-usage');
+    expect(contexts).toEqual([
+      { type: 'context-usage', usedTokens: 32100, windowTokens: null },
+      { type: 'context-usage', usedTokens: 32100, windowTokens: 1000000 },
+    ]);
+    const state = events.reduce(applySessionEvent, createSessionState());
+    expect(state.items.at(-1)).toEqual({
+      kind: 'compaction',
+      id: 'c1',
+      status: 'done',
+      automatic: false,
+      tokensBefore: 32100,
+      summary: '',
+    });
+  });
+
   it('reports failed turns as errors', () => {
     const events = parseAll([
       JSON.stringify({

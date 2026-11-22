@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../../models/openai-compatible.ts';
 import { approximateTokens } from '../../models/pricing.ts';
+import { MODEL_CHAT_AUTO_COMPACT_AT } from '../types.ts';
 import { truncateOutput } from './tools.ts';
 
 /*
@@ -8,7 +9,7 @@ import { truncateOutput } from './tools.ts';
  */
 
 /** Share of the context window at which a turn compacts the conversation before continuing. */
-export const AUTO_COMPACT_AT = 0.8;
+export const AUTO_COMPACT_AT = MODEL_CHAT_AUTO_COMPACT_AT;
 
 /** Introduces the summary in the compacted history, as a question the summary answers. */
 export const COMPACTED_QUESTION =

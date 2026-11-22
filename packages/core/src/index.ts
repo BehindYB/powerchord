@@ -49,6 +49,7 @@ export type {
 export {
   createSessionState,
   isModelChatMode,
+  MODEL_CHAT_AUTO_COMPACT_AT,
   MODEL_CHAT_MODES,
   parseAgentQuestions,
   QUESTION_TOOL_NAME,

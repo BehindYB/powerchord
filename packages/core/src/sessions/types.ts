@@ -47,6 +47,9 @@ export const MODEL_CHAT_MODES = [
   },
 ] as const satisfies readonly SessionOption[];
 
+/** Share of the context window at which a model chat compacts the conversation by itself. */
+export const MODEL_CHAT_AUTO_COMPACT_AT = 0.8;
+
 export type ModelChatMode = (typeof MODEL_CHAT_MODES)[number]['id'];
 
 export function isModelChatMode(value: unknown): value is ModelChatMode {

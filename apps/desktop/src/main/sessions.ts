@@ -705,7 +705,14 @@ export class SessionManager {
     );
     ipcMain.handle(IpcChannel.GetSession, (_event, sessionId: unknown): SessionSnapshot | null => {
       const session = typeof sessionId === 'string' ? this.sessions.get(sessionId) : undefined;
-      return session ? { summary: session.summary, state: session.state, seq: session.seq } : null;
+      if (!session) return null;
+      const { agentId } = session.summary;
+      if (!session.agent && (agentId === 'local-model' || agentId === 'api-model')) {
+        // Model chats start no process, so an opened chat starts at once to report its context.
+        // Problems such as a missing server are reported when the user sends a message.
+        void this.agentFor(session).catch(() => undefined);
+      }
+      return { summary: session.summary, state: session.state, seq: session.seq };
     });
     ipcMain.handle(IpcChannel.SendMessage, (event, sessionId: unknown, text: unknown) => {
       if (typeof text !== 'string' || text.trim().length === 0) throw new Error('Empty message');

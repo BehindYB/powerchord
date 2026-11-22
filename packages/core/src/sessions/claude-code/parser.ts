@@ -53,6 +53,10 @@ export class ClaudeStreamParser {
     { id: string; kind: BlockKind; matched: boolean }[]
   >();
   private fallbackCounter = 0;
+  private model: string | null = null;
+  /** Context window of the session's model, reported in each result's `modelUsage`. */
+  private contextWindow: number | null = null;
+  private contextTokens: number | null = null;
 
   /** Parses one stdout line. Unknown or malformed lines yield no events. */
   parseLine(line: string): SessionEvent[] {
@@ -92,9 +96,11 @@ export class ClaudeStreamParser {
   }
 
   private parseSystem(message: Json): SessionEvent[] {
+    if (message['subtype'] === 'compact_boundary') return this.parseCompactBoundary(message);
     if (message['subtype'] !== 'init') return [];
     const agentSessionId = str(message['session_id']);
     if (agentSessionId === null) return [];
+    this.model = str(message['model']);
     return [
       {
         type: 'session-info',
@@ -103,6 +109,34 @@ export class ClaudeStreamParser {
         permissionMode: str(message['permissionMode']),
       },
     ];
+  }
+
+  /** Claude Code compacted its conversation, on `/compact` or automatically. */
+  private parseCompactBoundary(message: Json): SessionEvent[] {
+    const metadata = isObject(message['compact_metadata']) ? message['compact_metadata'] : {};
+    const id = str(message['uuid']) ?? `compaction-${Date.now()}`;
+    // Claude Code keeps its summary to itself; the transcript shows where it compacted.
+    return [
+      {
+        type: 'compaction-start',
+        id,
+        automatic: metadata['trigger'] === 'auto',
+        tokensBefore: num(metadata['pre_tokens']) ?? this.contextTokens ?? 0,
+      },
+      { type: 'compaction-end', id, summary: '' },
+    ];
+  }
+
+  private contextEvent(): SessionEvent[] {
+    return this.contextTokens === null
+      ? []
+      : [
+          {
+            type: 'context-usage',
+            usedTokens: this.contextTokens,
+            windowTokens: this.contextWindow,
+          },
+        ];
   }
 
   private parseStreamEvent(message: Json): SessionEvent[] {
@@ -175,6 +209,20 @@ export class ClaudeStreamParser {
         }
       }
     }
+    // The prompt of each model request is the whole context, cached parts included.
+    const usage = isObject(body['usage']) ? body['usage'] : null;
+    const used = usage
+      ? sumTokens(
+          usage['input_tokens'],
+          usage['cache_creation_input_tokens'],
+          usage['cache_read_input_tokens'],
+          usage['output_tokens'],
+        )
+      : null;
+    if (used !== null && used > 0 && used !== this.contextTokens) {
+      this.contextTokens = used;
+      events.push(...this.contextEvent());
+    }
     return events;
   }
 
@@ -211,12 +259,33 @@ export class ClaudeStreamParser {
     };
     const id = str(message['uuid']) ?? `result-${Date.now()}`;
     const events: SessionEvent[] = [];
+    const window = this.windowFromModelUsage(message['modelUsage']);
+    if (window !== null && window !== this.contextWindow) {
+      this.contextWindow = window;
+      events.push(...this.contextEvent());
+    }
     if (summary.isError) {
       const detail = str(message['result']) ?? str(message['subtype']) ?? 'The turn failed.';
       events.push({ type: 'error', id: `${id}:error`, message: detail });
     }
     events.push({ type: 'turn-complete', id, summary });
     return events;
+  }
+
+  /** The session model's context window; side models such as Haiku report their own. */
+  private windowFromModelUsage(value: unknown): number | null {
+    if (!isObject(value)) return null;
+    const windows = Object.entries(value).flatMap(([model, entry]) => {
+      const size = isObject(entry) ? num(entry['contextWindow']) : null;
+      return size !== null && size > 0 ? [{ model, size }] : [];
+    });
+    const model = this.model;
+    const own = model
+      ? windows.find((entry) => entry.model.startsWith(model) || model.startsWith(entry.model))
+      : undefined;
+    if (own) return own.size;
+    const largest = Math.max(0, ...windows.map((entry) => entry.size));
+    return largest > 0 ? largest : null;
   }
 
   private parseRateLimit(message: Json): SessionEvent[] {
