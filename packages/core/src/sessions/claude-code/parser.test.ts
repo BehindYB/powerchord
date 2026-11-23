@@ -157,13 +157,92 @@ describe('ClaudeStreamParser', () => {
     });
   });
 
-  it('ignores subagent traffic, malformed lines and unknown types', () => {
-    const subagent = JSON.stringify({
-      type: 'assistant',
-      parent_tool_use_id: 'toolu_parent',
-      message: { id: 'msg_9', content: [{ type: 'text', text: 'inner' }] },
+  it('ignores malformed lines and unknown types', () => {
+    expect(parseAll(['not json', '{"type":"something_new"}', ''])).toEqual([]);
+  });
+
+  it('shows subagent work inside the tool call that started it', () => {
+    const events = parseAll([
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'entry-1',
+        parent_tool_use_id: null,
+        message: {
+          id: 'msg_1',
+          content: [{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: {} }],
+        },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'sub-1',
+        parent_tool_use_id: 'toolu_agent',
+        message: {
+          id: 'msg_9',
+          content: [
+            { type: 'text', text: 'Looking around' },
+            { type: 'tool_use', id: 'toolu_inner', name: 'Read', input: { file_path: 'a.ts' } },
+          ],
+          usage: { input_tokens: 99_999, output_tokens: 1 },
+        },
+      }),
+      JSON.stringify({
+        type: 'user',
+        parent_tool_use_id: 'toolu_agent',
+        message: {
+          content: [{ type: 'tool_result', tool_use_id: 'toolu_inner', content: 'code' }],
+        },
+      }),
+    ]);
+    // Subagent requests do not change the main conversation's context usage.
+    expect(events.some((event) => event.type === 'context-usage')).toBe(false);
+    const state = events.reduce(applySessionEvent, createSessionState());
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({
+      kind: 'tool-call',
+      id: 'toolu_agent',
+      children: [
+        { kind: 'text', text: 'Looking around' },
+        { kind: 'tool-call', id: 'toolu_inner', name: 'Read', status: 'done', output: 'code' },
+      ],
     });
-    expect(parseAll([subagent, 'not json', '{"type":"something_new"}', ''])).toEqual([]);
+  });
+
+  it('links sent messages to their entries and rewinds to them', () => {
+    const user = (text: string) => ({ type: 'user-message', id: text, text }) as SessionEvent;
+    let state = createSessionState();
+    const apply = (events: SessionEvent[]) => {
+      for (const event of events) state = applySessionEvent(state, event);
+    };
+    const parser = new ClaudeStreamParser();
+    const replay = (uuid: string) =>
+      JSON.stringify({
+        type: 'user',
+        uuid,
+        isReplay: true,
+        parent_tool_use_id: null,
+        message: { content: [] },
+      });
+    const answer = (uuid: string) =>
+      JSON.stringify({
+        type: 'assistant',
+        uuid,
+        parent_tool_use_id: null,
+        message: { id: uuid, content: [] },
+      });
+
+    apply([user('first'), ...parser.parseLine(replay('p1')), ...parser.parseLine(answer('a1'))]);
+    apply([user('second'), ...parser.parseLine(replay('p2')), ...parser.parseLine(answer('a2'))]);
+    expect(state.items.map((item) => (item.kind === 'user' ? item.agentRef : null))).toEqual([
+      { promptId: 'p1', resumeAt: null },
+      { promptId: 'p2', resumeAt: 'a1' },
+    ]);
+
+    apply([{ type: 'rewound', itemId: 'second', resumeAt: 'a1', resetConversation: false }]);
+    expect(state.items.map((item) => item.id)).toEqual(['first']);
+    expect(state.resumeAt).toBe('a1');
+    apply([user('again'), ...parser.parseLine(replay('p3'))]);
+    expect(state.resumeAt).toBeNull();
+    expect(state.items.at(-1)).toMatchObject({ agentRef: { promptId: 'p3', resumeAt: 'a1' } });
   });
 
   it('reports context usage, the context window and compactions', () => {

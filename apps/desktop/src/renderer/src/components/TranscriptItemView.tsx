@@ -73,6 +73,8 @@ function ToolCallView({
   onOpenSession: ((sessionId: string) => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+  const steps = item.children ?? [];
   const subChat =
     onOpenSession && isDelegationTool(item.name) ? delegationSessionId(item.output) : null;
   const statusClass =
@@ -106,6 +108,33 @@ function ToolCallView({
           >
             Open sub-chat
           </button>
+        </div>
+      )}
+      {steps.length > 0 && (
+        <div className="border-t border-border px-3 py-1.5">
+          <button
+            type="button"
+            onClick={() => setShowSteps(!showSteps)}
+            aria-expanded={showSteps}
+            className="text-xs text-muted hover:text-text"
+          >
+            {showSteps ? '▾' : '▸'} Subagent: {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+            {item.status === 'running' ? ' so far' : ''}
+          </button>
+          {showSteps && (
+            <div className="mt-2 mb-1 flex flex-col gap-2 border-l-2 border-border pl-3">
+              {steps.map((step) => (
+                <TranscriptItemView
+                  key={step.id}
+                  item={step}
+                  agentName="Subagent"
+                  showCost={false}
+                  onRespond={() => undefined}
+                  onAnswer={() => undefined}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
       {open && (
@@ -380,6 +409,7 @@ export function TranscriptItemView({
   onRespond,
   onAnswer,
   onOpenSession,
+  onRewind,
 }: {
   item: TranscriptItem;
   agentName: string;
@@ -389,11 +419,23 @@ export function TranscriptItemView({
   onAnswer: (requestId: string, answers: QuestionAnswers) => void;
   /** Opens a sub-chat linked from a delegation tool call. */
   onOpenSession?: (sessionId: string) => void;
+  /** Present on user messages the conversation can be rewound to. */
+  onRewind?: () => void;
 }) {
   switch (item.kind) {
     case 'user':
       return (
-        <div className="flex justify-end">
+        <div className="group flex items-start justify-end gap-2">
+          {onRewind && (
+            <button
+              type="button"
+              onClick={onRewind}
+              title="Rewind the conversation to before this message"
+              className="mt-1.5 rounded px-1.5 py-0.5 text-xs text-muted opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-text focus:opacity-100"
+            >
+              ↺ Rewind
+            </button>
+          )}
           <div className="max-w-[80%] rounded-2xl bg-hover px-4 py-2 text-sm whitespace-pre-wrap select-text">
             {item.text}
           </div>

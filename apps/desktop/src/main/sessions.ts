@@ -19,6 +19,7 @@ import {
   getAgent,
   isCodexMode,
   isModelChatMode,
+  FileCheckpointStore,
   ModelChatSession,
   openInTerminal,
   resolveSearchPath,
@@ -72,7 +73,16 @@ interface ManagedSession {
   agent: SessionAgent | null;
   /** Pending agent creation, shared by concurrent callers. */
   starting: Promise<SessionAgent> | null;
+  /** Increased when the agent is replaced, so events from a closed agent are ignored. */
+  generation: number;
 }
+
+/** Agents whose conversation PowerChord can rewind. */
+function canRewind(agentId: SessionSummary['agentId']): boolean {
+  return agentId === 'claude-code' || agentId === 'local-model' || agentId === 'api-model';
+}
+
+type UserItem = Extract<SessionState['items'][number], { kind: 'user' }>;
 
 function broadcast(channel: string, payload: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -201,6 +211,7 @@ export class SessionManager {
         seq: 0,
         agent: null,
         starting: null,
+        generation: 0,
       };
       this.sessions.set(summary.id, session);
       const { cwd, projectId } = session.summary;
@@ -254,6 +265,7 @@ export class SessionManager {
       session.agent?.close();
       this.sessions.delete(session.summary.id);
       await this.store.delete(session.summary.id);
+      await this.checkpoints(session.summary.id).clear();
     }
     await this.projects.remove(project.id);
     await this.memory.store.remove(project.id);
@@ -492,6 +504,7 @@ export class SessionManager {
       seq: 0,
       agent: null,
       starting: null,
+      generation: 0,
     };
     // Registered first so events the agent emits while starting are kept.
     this.sessions.set(summary.id, session);
@@ -531,7 +544,10 @@ export class SessionManager {
 
   private async createAgent(session: ManagedSession): Promise<SessionAgent> {
     const { summary, state } = session;
-    const onEvent = (event: SessionEvent) => this.handleEvent(summary.id, event);
+    const generation = session.generation;
+    const onEvent = (event: SessionEvent) => {
+      if (session.generation === generation) this.handleEvent(summary.id, event);
+    };
 
     if (isCodingAgent(summary.agentId)) {
       if (summary.cwd === null) throw new Error('This session has no working folder.');
@@ -584,6 +600,7 @@ export class SessionManager {
             ? summary.permissionMode
             : 'default',
           ...(resumeId ? { resumeSessionId: resumeId } : {}),
+          ...(resumeId && state.resumeAt ? { resumeSessionAt: state.resumeAt } : {}),
         });
       }
       if (summary.agentId === 'codex') {
@@ -629,6 +646,7 @@ export class SessionManager {
         ...(projectContext ? { projectContext } : {}),
         remember: (note: string) =>
           this.memory.rememberIn(folder, note, agentLabel(session.summary)),
+        checkpoints: this.checkpoints(summary.id),
         delegation: {
           gateway: this.delegation,
           parentSessionId: summary.id,
@@ -796,6 +814,128 @@ export class SessionManager {
     agent.compact();
   }
 
+  /** File checkpoints of a model chat, kept in PowerChord's data folder. */
+  private checkpoints(sessionId: string): FileCheckpointStore {
+    return new FileCheckpointStore(join(app.getPath('userData'), 'checkpoints', sessionId));
+  }
+
+  /**
+   * Rewinds the conversation to before the user message `itemId`, after asking whether to also
+   * restore the files changed since then. Resolves with the message text, which goes back to the
+   * composer, or null when the user cancelled.
+   */
+  private async rewind(
+    window: BrowserWindow | null,
+    session: ManagedSession,
+    itemId: unknown,
+  ): Promise<string | null> {
+    const { summary } = session;
+    if (!canRewind(summary.agentId)) {
+      throw new Error(`${SESSION_AGENT_NAMES[summary.agentId]} chats cannot be rewound.`);
+    }
+    if (summary.status === 'running' || summary.status === 'starting') {
+      throw new Error('Stop the current turn before rewinding.');
+    }
+    const items = session.state.items;
+    const index = items.findIndex((item) => item.id === itemId && item.kind === 'user');
+    if (index === -1) throw new Error('Unknown message');
+    const target = items[index] as UserItem;
+    const turns = items.slice(index).filter((item): item is UserItem => item.kind === 'user');
+    const isFirst = !items.slice(0, index).some((item) => item.kind === 'user');
+
+    let files: string[] = [];
+    let filesNote: string | null = null;
+    let restore: (() => Promise<void>) | null = null;
+    if (summary.agentId === 'claude-code') {
+      const ref = target.agentRef;
+      if (!ref && !isFirst) {
+        throw new Error(
+          'This message was sent with an earlier version of PowerChord, which did not record what rewinding Claude Code needs.',
+        );
+      }
+      if (ref) {
+        const agent = await this.agentFor(session);
+        if (!(agent instanceof ClaudeCodeSession)) throw new Error('Unexpected agent');
+        const preview = await agent.rewindFiles(ref.promptId, true).catch((error: unknown) => ({
+          canRewind: false,
+          error: error instanceof Error ? error.message : String(error),
+          files: [],
+        }));
+        if (preview.canRewind) {
+          files = preview.files;
+          restore = async () => {
+            const result = await agent.rewindFiles(ref.promptId, false);
+            if (!result.canRewind) {
+              throw new Error(result.error ?? 'Claude Code could not restore the files.');
+            }
+          };
+        } else {
+          filesNote = preview.error;
+        }
+      }
+    } else if (summary.cwd !== null) {
+      const store = this.checkpoints(summary.id);
+      const turnIds = turns.map((turn) => turn.id);
+      files = await store.changedFiles(turnIds);
+      restore = async () => {
+        await store.restore(turnIds);
+      };
+    }
+
+    const cwd = summary.cwd;
+    const shown = files
+      .slice(0, 12)
+      .map((file) =>
+        cwd && file.toLowerCase().startsWith(cwd.toLowerCase())
+          ? file.slice(cwd.length).replace(/^[\\/]/, '')
+          : file,
+      );
+    const more = files.length > shown.length ? `\n…and ${files.length - shown.length} more` : '';
+    const fileDetail =
+      files.length > 0
+        ? `Files changed since then:\n${shown.join('\n')}${more}\n\nChanges made by commands are not undone.`
+        : filesNote
+          ? `File changes cannot be restored: ${filesNote}`
+          : 'There are no file changes to restore.';
+    const buttons =
+      files.length > 0
+        ? ['Rewind conversation and files', 'Rewind conversation only', 'Cancel']
+        : ['Rewind', 'Cancel'];
+    const confirmation: Electron.MessageBoxOptions = {
+      type: 'question',
+      buttons,
+      defaultId: 0,
+      cancelId: buttons.length - 1,
+      noLink: true,
+      title: 'Rewind',
+      message: 'Rewind the conversation to before this message?',
+      detail: `The message and everything after it are removed; the message goes back to the composer.\n\n${fileDetail}`,
+    };
+    const { response } = window
+      ? await dialog.showMessageBox(window, confirmation)
+      : await dialog.showMessageBox(confirmation);
+    if (response === buttons.length - 1) return null;
+    if (files.length > 0 && response === 0 && restore) await restore();
+
+    // The agent restarts from the rewound conversation at the next message.
+    session.generation += 1;
+    session.agent?.close();
+    session.agent = null;
+    session.starting = null;
+    if (summary.agentId !== 'claude-code') {
+      await this.checkpoints(summary.id).discard(turns.map((turn) => turn.id));
+    }
+    const resumeAt = target.agentRef?.resumeAt ?? null;
+    this.handleEvent(summary.id, {
+      type: 'rewound',
+      itemId: target.id,
+      resumeAt,
+      resetConversation: summary.agentId === 'claude-code' && (isFirst || resumeAt === null),
+    });
+    this.handleEvent(summary.id, { type: 'status', status: 'idle' });
+    return target.text;
+  }
+
   private async delete(window: BrowserWindow | null, session: ManagedSession): Promise<boolean> {
     const { agentId } = session.summary;
     const agentName = SESSION_AGENT_NAMES[agentId];
@@ -818,6 +958,7 @@ export class SessionManager {
     session.agent?.close();
     this.sessions.delete(session.summary.id);
     await this.store.delete(session.summary.id);
+    await this.checkpoints(session.summary.id).clear();
     this.notifySessionsChanged();
     return true;
   }
@@ -945,6 +1086,9 @@ export class SessionManager {
     );
     ipcMain.handle(IpcChannel.DeleteSession, (event, sessionId: unknown) =>
       this.delete(BrowserWindow.fromWebContents(event.sender), this.require(sessionId)),
+    );
+    ipcMain.handle(IpcChannel.RewindSession, (event, sessionId: unknown, itemId: unknown) =>
+      this.rewind(BrowserWindow.fromWebContents(event.sender), this.require(sessionId), itemId),
     );
     ipcMain.handle(
       IpcChannel.SetSessionArchived,

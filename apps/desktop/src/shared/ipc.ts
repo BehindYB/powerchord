@@ -31,6 +31,7 @@ export const IpcChannel = {
   UpdateSessionSettings: 'sessions:update-settings',
   DeleteSession: 'sessions:delete',
   SetSessionArchived: 'sessions:set-archived',
+  RewindSession: 'sessions:rewind',
   ShowSessionMenu: 'sessions:show-menu',
   OpenSessionIn: 'sessions:open-in',
   ListProjects: 'projects:list',
@@ -432,6 +433,11 @@ export interface PowerChordApi {
   /** Asks for confirmation, then stops the session and removes it from the history. */
   deleteSession(sessionId: string): Promise<boolean>;
   setSessionArchived(sessionId: string, archived: boolean): Promise<void>;
+  /**
+   * Asks whether to rewind the conversation to before a user message, and its file changes too.
+   * Resolves with the message text for the composer, or null when the user cancelled.
+   */
+  rewindSession(sessionId: string, itemId: string): Promise<string | null>;
   /**
    * Shows a session's native context menu. Archiving and deleting happen in the main process;
    * the result tells the renderer what is left for it to do.

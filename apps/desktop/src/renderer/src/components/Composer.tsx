@@ -19,6 +19,8 @@ interface ComposerProps {
   status?: ReactNode;
   /** Controls shown in the composer's footer, such as model and mode pickers. */
   children?: ReactNode;
+  /** Text to put in the composer, such as a rewound message; a new `key` replaces the draft. */
+  draft?: { text: string; key: number } | null;
 }
 
 export function Composer({
@@ -30,8 +32,15 @@ export function Composer({
   commands = [],
   status,
   children,
+  draft,
 }: ComposerProps) {
   const [text, setText] = useState('');
+  // A new draft replaces the text while rendering, as React recommends for props-driven resets.
+  const [draftKey, setDraftKey] = useState<number | null>(null);
+  if (draft && draft.key !== draftKey) {
+    setDraftKey(draft.key);
+    setText(draft.text);
+  }
   const [highlighted, setHighlighted] = useState(0);
   const canSend = !disabled && !busy && text.trim().length > 0;
   const suggestions = /^\/\S*$/.test(text)

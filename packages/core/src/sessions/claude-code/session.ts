@@ -30,6 +30,14 @@ import { ClaudeStreamParser } from './parser.ts';
  */
 
 const STDERR_TAIL_BYTES = 4000;
+const CONTROL_TIMEOUT_MS = 30_000;
+
+/** What rewinding files to a message changes, as Claude Code reports it. */
+export interface ClaudeFileRewind {
+  canRewind: boolean;
+  error: string | null;
+  files: string[];
+}
 
 export interface ClaudeCodeSessionOptions {
   executable: string;
@@ -49,6 +57,8 @@ export interface ClaudeCodeSessionOptions {
   label?: string;
   /** Added to Claude Code's system prompt with its documented `--append-system-prompt` option. */
   appendSystemPrompt?: string;
+  /** After a rewind: the conversation entry the resumed conversation continues from. */
+  resumeSessionAt?: string;
 }
 
 interface PendingPermission {
@@ -73,6 +83,11 @@ export class ClaudeCodeSession implements AgentSession {
   private restartAfterTurn = false;
   private expectedExit = false;
   private stderrTail = '';
+  private resumeAt: string | null;
+  private readonly pendingControls = new Map<
+    string,
+    { resolve: (response: unknown) => void; reject: (error: Error) => void }
+  >();
   private closed = false;
 
   constructor(options: ClaudeCodeSessionOptions) {
@@ -81,6 +96,7 @@ export class ClaudeCodeSession implements AgentSession {
     this.hasConversation = options.resumeSessionId !== undefined;
     this.model = options.model;
     this.permissionMode = options.permissionMode;
+    this.resumeAt = options.resumeSessionAt ?? null;
     this.mcpHandlers = {
       label: options.label ?? 'Claude Code',
       requestPermission: (request) => this.requestPermission(request),
@@ -155,6 +171,77 @@ export class ClaudeCodeSession implements AgentSession {
     this.scheduleRestart();
   }
 
+  /**
+   * Restores the files Claude Code changed with its file tools since the message `promptId`, or
+   * with `dryRun` only reports them. Uses Claude Code's file checkpointing, the same mechanism as
+   * the Agent SDK's `rewindFiles`; changes made by shell commands are not tracked.
+   */
+  async rewindFiles(promptId: string, dryRun: boolean): Promise<ClaudeFileRewind> {
+    if (this.closed) throw new Error('Session is closed');
+    if (this.status === 'running') throw new Error('Wait for the current turn or stop it first.');
+    const started = !this.child;
+    if (started) this.startProcess();
+    try {
+      const response = await this.control({
+        subtype: 'rewind_files',
+        user_message_id: promptId,
+        ...(dryRun ? { dry_run: true } : {}),
+      });
+      const result = typeof response === 'object' && response !== null ? response : {};
+      const fields = result as Record<string, unknown>;
+      return {
+        canRewind: fields['canRewind'] === true,
+        error: typeof fields['error'] === 'string' ? fields['error'] : null,
+        files: Array.isArray(fields['filesChanged'])
+          ? fields['filesChanged'].filter((file): file is string => typeof file === 'string')
+          : [],
+      };
+    } finally {
+      // A process started only for this request waits for the next message.
+      if (started && this.status === 'starting') this.setStatus('idle');
+    }
+  }
+
+  private control(request: Record<string, unknown>): Promise<unknown> {
+    const child = this.child;
+    if (!child) return Promise.reject(new Error('Claude Code is not running.'));
+    const requestId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingControls.delete(requestId);
+        reject(new Error('Claude Code did not answer in time.'));
+      }, CONTROL_TIMEOUT_MS);
+      this.pendingControls.set(requestId, {
+        resolve: (response) => {
+          clearTimeout(timer);
+          resolve(response);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+      child.stdin.write(
+        `${JSON.stringify({ type: 'control_request', request_id: requestId, request })}\n`,
+      );
+    });
+  }
+
+  private handleControlResponse(message: Record<string, unknown>): void {
+    const response = message['response'];
+    if (typeof response !== 'object' || response === null) return;
+    const fields = response as Record<string, unknown>;
+    const pending =
+      typeof fields['request_id'] === 'string'
+        ? this.pendingControls.get(fields['request_id'])
+        : undefined;
+    if (!pending) return;
+    this.pendingControls.delete(fields['request_id'] as string);
+    if (fields['subtype'] === 'success') pending.resolve(fields['response']);
+    else
+      pending.reject(new Error(typeof fields['error'] === 'string' ? fields['error'] : 'Failed'));
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -196,8 +283,12 @@ export class ClaudeCodeSession implements AgentSession {
       'stream-json',
       '--verbose',
       '--include-partial-messages',
+      // User message UUIDs and subagent text, as the Agent SDK requests them.
+      '--replay-user-messages',
+      '--forward-subagent-text',
       this.hasConversation ? '--resume' : '--session-id',
       this.agentSessionId,
+      ...(this.hasConversation && this.resumeAt ? ['--resume-session-at', this.resumeAt] : []),
       '--permission-mode',
       this.permissionMode,
       '--mcp-config',
@@ -220,7 +311,8 @@ export class ClaudeCodeSession implements AgentSession {
 
     const child = spawn(this.options.executable, this.buildArgs(), {
       cwd: this.options.cwd,
-      env: this.options.env,
+      // Enables the file checkpoints used to rewind file changes, as the Agent SDK does.
+      env: { ...this.options.env, CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: 'true' },
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -234,7 +326,7 @@ export class ClaudeCodeSession implements AgentSession {
       while ((newline = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
-        for (const event of this.parser.parseLine(line)) this.handleAgentEvent(event);
+        this.handleLine(line);
       }
     });
     child.stderr.setEncoding('utf8');
@@ -255,8 +347,23 @@ export class ClaudeCodeSession implements AgentSession {
     return child;
   }
 
+  private handleLine(line: string): void {
+    let message: unknown;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (typeof message !== 'object' || message === null || Array.isArray(message)) return;
+    const fields = message as Record<string, unknown>;
+    if (fields['type'] === 'control_response') return this.handleControlResponse(fields);
+    for (const event of this.parser.parseMessage(fields)) this.handleAgentEvent(event);
+  }
+
   private handleAgentEvent(event: SessionEvent): void {
     if (event.type === 'session-info') this.hasConversation = true;
+    // The first message after a rewind continues the conversation from the rewind point.
+    if (event.type === 'agent-entry' && event.prompt) this.resumeAt = null;
     this.emit(event);
     if (event.type === 'turn-complete') {
       this.setStatus('idle');
@@ -268,6 +375,10 @@ export class ClaudeCodeSession implements AgentSession {
     if (this.child !== child) return;
     this.child = null;
     this.denyPendingPermissions();
+    for (const pending of this.pendingControls.values()) {
+      pending.reject(new Error('Claude Code stopped.'));
+    }
+    this.pendingControls.clear();
     if (!this.expectedExit && !this.closed) {
       const detail = this.stderrTail.trim();
       this.emit({

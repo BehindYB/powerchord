@@ -188,10 +188,31 @@ export type SessionEvent =
   | { type: 'compaction-start'; id: string; automatic: boolean; tokensBefore: number }
   /** The summary that replaced the conversation; null when the compaction failed or stopped. */
   | { type: 'compaction-end'; id: string; summary: string | null }
-  | { type: 'error'; id: string; message: string };
+  | { type: 'error'; id: string; message: string }
+  /**
+   * An entry the agent added to its own conversation record, such as Claude Code's message
+   * UUIDs. `prompt` marks the entry of a message the user sent; rewinding uses these ids.
+   */
+  | { type: 'agent-entry'; id: string; prompt: boolean }
+  /** An event of a subagent the agent started, shown inside that tool call. */
+  | { type: 'subagent-event'; parentToolCallId: string; event: SessionEvent }
+  /**
+   * The conversation went back to before the user message `itemId`, which is removed with
+   * everything after it. `resumeAt` is the agent's entry the conversation continues from;
+   * `resetConversation` starts the agent's conversation afresh.
+   */
+  | { type: 'rewound'; itemId: string; resumeAt: string | null; resetConversation: boolean };
+
+/** Where a user message sits in the agent's own conversation record. */
+export interface AgentTurnRef {
+  /** The agent's id for the message; file changes are rewound to the state before it. */
+  promptId: string;
+  /** The agent's entry just before the message; rewinding continues from there. */
+  resumeAt: string | null;
+}
 
 export type TranscriptItem =
-  | { kind: 'user'; id: string; text: string }
+  | { kind: 'user'; id: string; text: string; agentRef?: AgentTurnRef }
   | { kind: 'text' | 'thinking'; id: string; text: string; streaming: boolean }
   | {
       kind: 'tool-call';
@@ -200,6 +221,8 @@ export type TranscriptItem =
       input: unknown;
       status: 'running' | 'done' | 'error';
       output: string | null;
+      /** What a subagent started by this call did. */
+      children?: TranscriptItem[];
     }
   | {
       kind: 'permission';
@@ -232,6 +255,10 @@ export interface SessionState {
   usageLimits: UsageLimits | null;
   context: ContextUsage | null;
   items: TranscriptItem[];
+  /** The latest entry of the agent's own conversation record, when the agent reports them. */
+  lastAgentEntryId: string | null;
+  /** After a rewind, the agent's entry its conversation continues from at the next start. */
+  resumeAt: string | null;
 }
 
 export function createSessionState(): SessionState {
@@ -245,5 +272,7 @@ export function createSessionState(): SessionState {
     usageLimits: null,
     context: null,
     items: [],
+    lastAgentEntryId: null,
+    resumeAt: null,
   };
 }

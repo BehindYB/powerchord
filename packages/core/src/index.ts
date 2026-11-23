@@ -31,6 +31,7 @@ export { openInTerminal, type TerminalLaunchOptions } from './system/terminal.ts
 export type {
   AgentQuestion,
   AgentSession,
+  AgentTurnRef,
   ContextUsage,
   ModelChatMode,
   PermissionBehavior,
@@ -183,3 +184,5 @@ export {
   type DelegationTarget,
   type SessionDelegation,
 } from './hub/delegation.ts';
+export { FileCheckpointStore } from './sessions/model-chat/checkpoints.ts';
+export type { ClaudeFileRewind } from './sessions/claude-code/session.ts';

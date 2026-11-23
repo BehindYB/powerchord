@@ -29,7 +29,8 @@ Last reviewed: 2026-10-14. Re-check the referenced terms before changing an inte
 6. For Gemini CLI, PowerChord runs the `gemini` binary installed by the user in its documented Agent Client Protocol mode (`gemini --acp`) and selects the `gemini-api-key` authentication method the agent advertises, with the user's key in `GEMINI_API_KEY`. Gemini CLI records the selected method in its own settings, as it does when the user chooses it interactively.
 7. Claude Code sessions billed to the user's Anthropic API key run the same binary with `ANTHROPIC_API_KEY` and a separate `CLAUDE_CONFIG_DIR` inside PowerChord's data folder. A signed-in Claude Code keeps using the subscription even when the key is set, so the separate folder, which has no login, is what makes the key take effect. PowerChord never reads that folder.
 8. To list the models Claude Code offers, PowerChord sends the binary the same `initialize` control request that the official Claude Agent SDK sends at startup, without a prompt, so no turn runs. The response also describes the signed-in account; PowerChord uses only the model list and discards the rest.
-9. Vendor agents whose consumer terms prohibit use from third-party applications (currently Antigravity CLI) are not integrated with consumer accounts.
+9. For rewinding and for showing subagents, PowerChord uses the options and control requests the Claude Agent SDK uses for the same features: `--replay-user-messages` (message ids), `--forward-subagent-text`, file checkpointing (`CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING`, the SDK's `enableFileCheckpointing`) with the `rewind_files` control request (the SDK's `rewindFiles`), and `--resume-session-at` (the SDK's `resumeSessionAt`). None of them changes how the binary authenticates.
+10. Vendor agents whose consumer terms prohibit use from third-party applications (currently Antigravity CLI) are not integrated with consumer accounts.
 
 ## Agents PowerChord does not drive (Antigravity)
 
@@ -66,6 +67,12 @@ An agent can ask PowerChord to hand work to another agent or model with the hub 
 3. Starting a sub-chat is a tool call of the delegating agent, approved by that agent's own permission settings; model chats ask first unless their mode allows commands. Agents outside PowerChord, which the user is not watching in PowerChord, need the user's confirmation in a PowerChord dialog for every sub-chat.
 4. Sub-chats cannot delegate further, and an agent can only follow or continue the sub-chats it started. Each wait for an answer is limited to nine minutes, within the agents' own tool timeouts.
 5. PowerChord passes the task text as the delegating agent wrote it. It adds no instructions of its own and never acts on a vendor service with another agent's credentials.
+
+## Rewind
+
+1. The user can rewind Claude Code, local model and API chats to before one of their messages. PowerChord asks first and says which files were changed since then; restoring them is a separate choice.
+2. For Claude Code, files are restored by Claude Code's own file checkpoints and the conversation continues from the chosen point with its documented resume options. For model chats, PowerChord saves a copy of each file in its data folder before a file tool changes it, and deletes the copies when the chat is deleted or the turns are rewound.
+3. Only changes made by the agents' file tools can be restored; changes made by shell commands are not undone, and the confirmation says so. Codex and Gemini CLI do not offer a way to rewind, so their chats cannot be rewound.
 
 ## Network discovery
 

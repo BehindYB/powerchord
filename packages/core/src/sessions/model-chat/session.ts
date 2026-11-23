@@ -26,6 +26,7 @@ import {
   type TranscriptItem,
   type TurnSummary,
 } from '../types.ts';
+import type { FileCheckpointStore } from './checkpoints.ts';
 import {
   AUTO_COMPACT_AT,
   cleanSummary,
@@ -70,6 +71,8 @@ export interface ModelChatSessionOptions {
   remember?: (note: string) => Promise<void>;
   /** Lets chats with a folder delegate work to other agents in sub-chats. */
   delegation?: SessionDelegation;
+  /** Saves files before the tools change them, so the user can rewind the changes. */
+  checkpoints?: FileCheckpointStore;
 }
 
 /**
@@ -299,6 +302,8 @@ export class ModelChatSession implements AgentSession {
   private controller: AbortController | null = null;
   private closed = false;
   private windowTokens: number | null = null;
+  /** Transcript id of the user message whose turn is running; file checkpoints are kept by it. */
+  private turnId: string | null = null;
   /** Tokens the server counted for the history up to `length` messages, after the last reply. */
   private baseline: { tokens: number; length: number } | null = null;
 
@@ -334,7 +339,9 @@ export class ModelChatSession implements AgentSession {
   send(text: string): void {
     if (this.closed) throw new Error('Session is closed');
     if (this.controller) throw new Error('Wait for the current answer or stop it first.');
-    this.emit({ type: 'user-message', id: randomUUID(), text });
+    const id = randomUUID();
+    this.turnId = id;
+    this.emit({ type: 'user-message', id, text });
     this.history.push({ role: 'user', content: text });
     void this.runTurn();
   }
@@ -663,7 +670,16 @@ export class ModelChatSession implements AgentSession {
       }
     }
     try {
-      const output = await tool.run(input, { cwd: workspace.cwd, env: workspace.env, signal });
+      const checkpoints = this.options.checkpoints;
+      const turnId = this.turnId;
+      const output = await tool.run(input, {
+        cwd: workspace.cwd,
+        env: workspace.env,
+        signal,
+        ...(checkpoints && turnId
+          ? { beforeChange: (path: string) => checkpoints.record(turnId, path) }
+          : {}),
+      });
       return finish({ output, isError: false });
     } catch (error) {
       return finish({

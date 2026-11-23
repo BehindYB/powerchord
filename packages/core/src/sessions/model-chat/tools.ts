@@ -20,6 +20,8 @@ export interface ToolContext {
   /** Environment for commands. */
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
+  /** Called with a file's absolute path before a tool changes it, to save a checkpoint. */
+  beforeChange?: (path: string) => Promise<void>;
 }
 
 export interface WorkspaceTool {
@@ -213,6 +215,7 @@ async function writeFileTool(
     () => true,
     () => false,
   );
+  await context.beforeChange?.(path);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content, 'utf8');
   return `${existed ? 'Replaced' : 'Created'} ${displayPath(context.cwd, path)} (${content.split('\n').length} lines).`;
@@ -240,6 +243,7 @@ async function editFile(input: Record<string, unknown>, context: ToolContext): P
   const updated = replaceAll
     ? original.split(search).join(replacement)
     : original.replace(search, () => replacement);
+  await context.beforeChange?.(path);
   await writeFile(path, updated, 'utf8');
   return `Edited ${displayPath(context.cwd, path)} (${replaceAll ? count : 1} replacement${count > 1 && replaceAll ? 's' : ''}).`;
 }

@@ -1,4 +1,9 @@
-import type { SessionEvent, SessionState, TranscriptItem } from './types.ts';
+import {
+  createSessionState,
+  type SessionEvent,
+  type SessionState,
+  type TranscriptItem,
+} from './types.ts';
 
 function replaceItem(
   items: TranscriptItem[],
@@ -18,6 +23,35 @@ function hasItem(items: TranscriptItem[], id: string): boolean {
 
 function withItems(state: SessionState, items: TranscriptItem[]): SessionState {
   return items === state.items ? state : { ...state, items };
+}
+
+/** Applies a subagent's event to the tool call that started it, at any depth. */
+function applyToToolCall(
+  items: TranscriptItem[],
+  toolCallId: string,
+  event: SessionEvent,
+): TranscriptItem[] {
+  let changed = false;
+  const next = items.map((item): TranscriptItem => {
+    if (changed || item.kind !== 'tool-call') return item;
+    if (item.id === toolCallId) {
+      changed = true;
+      const nested = applySessionEvent(
+        { ...createSessionState(), items: item.children ?? [] },
+        event,
+      );
+      return { ...item, children: nested.items };
+    }
+    if (item.children) {
+      const children = applyToToolCall(item.children, toolCallId, event);
+      if (children !== item.children) {
+        changed = true;
+        return { ...item, children };
+      }
+    }
+    return item;
+  });
+  return changed ? next : items;
 }
 
 /** Folds one event into the session state. Pure: returns a new state, sharing unchanged items. */
@@ -181,6 +215,50 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
 
     case 'error':
       return withItems(state, [...items, { kind: 'error', id: event.id, message: event.message }]);
+
+    case 'agent-entry': {
+      if (!event.prompt) return { ...state, lastAgentEntryId: event.id };
+      // The entry of a sent message belongs to the latest user message without one.
+      let index = -1;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i]!;
+        if (item.kind === 'user') {
+          if (!item.agentRef) index = i;
+          break;
+        }
+      }
+      const next = items.slice();
+      if (index >= 0) {
+        const item = items[index] as Extract<TranscriptItem, { kind: 'user' }>;
+        next[index] = {
+          ...item,
+          agentRef: { promptId: event.id, resumeAt: state.lastAgentEntryId },
+        };
+      }
+      // A new turn continues the conversation, so a pending rewind point is no longer needed.
+      return {
+        ...state,
+        items: index >= 0 ? next : items,
+        lastAgentEntryId: event.id,
+        resumeAt: null,
+      };
+    }
+
+    case 'subagent-event':
+      return withItems(state, applyToToolCall(items, event.parentToolCallId, event.event));
+
+    case 'rewound': {
+      const index = items.findIndex((item) => item.id === event.itemId);
+      if (index === -1) return state;
+      return {
+        ...state,
+        items: items.slice(0, index),
+        agentSessionId: event.resetConversation ? null : state.agentSessionId,
+        lastAgentEntryId: event.resumeAt,
+        resumeAt: event.resumeAt,
+        context: null,
+      };
+    }
   }
 }
 
@@ -195,6 +273,8 @@ export function settleSessionState(state: SessionState): SessionState {
     availableModels: state.availableModels ?? null,
     availableModes: state.availableModes ?? null,
     context: state.context ?? null,
+    lastAgentEntryId: state.lastAgentEntryId ?? null,
+    resumeAt: state.resumeAt ?? null,
     status: 'idle',
     items: finishOpenItems(state.items),
   };
@@ -216,9 +296,18 @@ function finishOpenItems(items: TranscriptItem[]): TranscriptItem[] {
       changed = true;
       return { ...item, status: 'error' };
     }
-    if (item.kind === 'tool-call' && item.status === 'running') {
-      changed = true;
-      return { ...item, status: 'error', output: item.output ?? 'Not completed' };
+    if (item.kind === 'tool-call') {
+      const children = item.children ? finishOpenItems(item.children) : item.children;
+      if (item.status === 'running' || children !== item.children) {
+        changed = true;
+        return {
+          ...item,
+          ...(children ? { children } : {}),
+          ...(item.status === 'running'
+            ? { status: 'error' as const, output: item.output ?? 'Not completed' }
+            : {}),
+        };
+      }
     }
     return item;
   });

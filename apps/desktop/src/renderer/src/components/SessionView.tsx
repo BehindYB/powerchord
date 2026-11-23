@@ -4,6 +4,7 @@ import {
   type PermissionBehavior,
   type QuestionAnswers,
   type SessionState,
+  type TranscriptItem,
   type UsageLimits,
 } from '@powerchord/core/sessions';
 import { useEffect, useRef, useState } from 'react';
@@ -180,6 +181,24 @@ export function SessionView({
       ? [summary.model]
       : [];
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ text: string; key: number } | null>(null);
+  const rewindable =
+    summary.agentId === 'claude-code' ||
+    summary.agentId === 'local-model' ||
+    summary.agentId === 'api-model';
+  const firstUserItem = state?.items.find((item) => item.kind === 'user')?.id;
+  /** Claude Code can rewind to messages whose place in its own record is known. */
+  const canRewindTo = (item: TranscriptItem) =>
+    rewindable &&
+    !busy &&
+    item.kind === 'user' &&
+    (summary.agentId !== 'claude-code' || item.agentRef !== undefined || item.id === firstUserItem);
+  const rewind = (itemId: string) =>
+    void run(
+      window.powerchord.rewindSession(summary.id, itemId).then((text) => {
+        if (text !== null) setDraft({ text, key: Date.now() });
+      }),
+    );
   const scroller = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
   const busy = state?.status === 'running' || state?.status === 'starting';
@@ -332,6 +351,7 @@ export function SessionView({
               onRespond={respond}
               onAnswer={answer}
               onOpenSession={(id) => onOpenSession(id, true)}
+              {...(canRewindTo(item) ? { onRewind: () => rewind(item.id) } : {})}
             />
           ))}
           {state?.status === 'starting' && (
@@ -353,6 +373,7 @@ export function SessionView({
                 : run(window.powerchord.sendMessage(summary.id, text))
             }
             onStop={() => void run(window.powerchord.interruptSession(summary.id))}
+            draft={draft}
             commands={canCompactAgent ? [COMPACT_COMMAND] : []}
             status={
               canCompactAgent &&

@@ -72,9 +72,16 @@ export class ClaudeStreamParser {
   }
 
   parseMessage(message: Json): SessionEvent[] {
-    // Subagent traffic is identified by a parent tool call; only the main conversation is shown.
-    if (message['parent_tool_use_id'] !== null && message['parent_tool_use_id'] !== undefined) {
-      return [];
+    // Subagent traffic names the tool call that started the subagent; it is shown inside that call.
+    const parentToolCallId = str(message['parent_tool_use_id']);
+    if (parentToolCallId !== null) {
+      const events =
+        message['type'] === 'assistant'
+          ? this.parseAssistant(message, false)
+          : message['type'] === 'user'
+            ? this.parseUser(message)
+            : [];
+      return events.map((event) => ({ type: 'subagent-event', parentToolCallId, event }));
     }
 
     switch (message['type']) {
@@ -83,9 +90,10 @@ export class ClaudeStreamParser {
       case 'stream_event':
         return this.parseStreamEvent(message);
       case 'assistant':
-        return this.parseAssistant(message);
+        return [...this.entry(message, false), ...this.parseAssistant(message, true)];
       case 'user':
-        return this.parseUser(message);
+        // Messages the user sent are echoed back with --replay-user-messages.
+        return [...this.entry(message, message['isReplay'] === true), ...this.parseUser(message)];
       case 'result':
         return this.parseResult(message);
       case 'rate_limit_event':
@@ -125,6 +133,12 @@ export class ClaudeStreamParser {
       },
       { type: 'compaction-end', id, summary: '' },
     ];
+  }
+
+  /** Records the UUID of a conversation entry, used to rewind the conversation and its files. */
+  private entry(message: Json, prompt: boolean): SessionEvent[] {
+    const id = str(message['uuid']);
+    return id === null ? [] : [{ type: 'agent-entry', id, prompt }];
   }
 
   private contextEvent(): SessionEvent[] {
@@ -189,7 +203,8 @@ export class ClaudeStreamParser {
     return `${messageId}:complete-${this.fallbackCounter}`;
   }
 
-  private parseAssistant(message: Json): SessionEvent[] {
+  /** `main` is false for subagent messages, which do not count towards the session's context. */
+  private parseAssistant(message: Json, main: boolean): SessionEvent[] {
     const body = message['message'];
     if (!isObject(body) || !Array.isArray(body['content'])) return [];
     const messageId = str(body['id']) ?? 'message';
@@ -219,7 +234,7 @@ export class ClaudeStreamParser {
           usage['output_tokens'],
         )
       : null;
-    if (used !== null && used > 0 && used !== this.contextTokens) {
+    if (main && used !== null && used > 0 && used !== this.contextTokens) {
       this.contextTokens = used;
       events.push(...this.contextEvent());
     }

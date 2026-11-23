@@ -40,6 +40,8 @@ const api: PowerChordApi = {
   answerQuestion: (sessionId, requestId, answers) =>
     ipcRenderer.invoke(IpcChannel.AnswerQuestion, sessionId, requestId, answers),
   deleteSession: (sessionId) => ipcRenderer.invoke(IpcChannel.DeleteSession, sessionId),
+  rewindSession: (sessionId, itemId) =>
+    ipcRenderer.invoke(IpcChannel.RewindSession, sessionId, itemId),
   setSessionArchived: (sessionId, archived) =>
     ipcRenderer.invoke(IpcChannel.SetSessionArchived, sessionId, archived),
   showSessionMenu: (sessionId, options) =>
