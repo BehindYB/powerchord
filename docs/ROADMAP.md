@@ -92,6 +92,7 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Context menu for chats and projects (open side by side, archive, delete; new chat, open folder, remove); archived chats listed apart
 - Claude Code's own subagents are shown inside the tool call that started them, step by step
 - Rewind Claude Code, local model and API chats to before a message, optionally restoring the files changed since then; the message goes back to the composer
+- Claude Code chats show their context from the start, with Claude Code's own breakdown and auto-compact threshold, and compact on request with a progress card
 - Rules in [COMPLIANCE.md](COMPLIANCE.md#delegation-between-agents) and [COMPLIANCE.md](COMPLIANCE.md#rewind)
 
 ## Next

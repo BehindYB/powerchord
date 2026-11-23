@@ -1,6 +1,7 @@
 import {
   MODEL_CHAT_AUTO_COMPACT_AT,
   MODEL_CHAT_MODES,
+  type ContextUsage,
   type PermissionBehavior,
   type QuestionAnswers,
   type SessionState,
@@ -380,7 +381,9 @@ export function SessionView({
               state?.context && (
                 <ContextGauge
                   context={state.context}
-                  autoCompactAt={isLocal ? MODEL_CHAT_AUTO_COMPACT_AT : null}
+                  autoCompactAt={
+                    isLocal ? MODEL_CHAT_AUTO_COMPACT_AT : autoCompactShare(state.context)
+                  }
                   canCompact={!busy && state.items.some((item) => item.kind === 'user')}
                   onCompact={() =>
                     void run(
@@ -416,4 +419,10 @@ export function SessionView({
       </div>
     </section>
   );
+}
+
+/** Share of the window at which the agent reported it compacts by itself, if it did. */
+function autoCompactShare(context: ContextUsage): number | null {
+  const { autoCompactTokens, windowTokens } = context;
+  return autoCompactTokens && windowTokens ? autoCompactTokens / windowTokens : null;
 }

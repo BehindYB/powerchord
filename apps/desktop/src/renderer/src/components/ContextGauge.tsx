@@ -63,7 +63,7 @@ export function ContextGauge({
     };
   }, [open]);
 
-  const { usedTokens, windowTokens } = context;
+  const { usedTokens, windowTokens, parts } = context;
   const share = windowTokens ? Math.min(1, usedTokens / windowTokens) : null;
   const percent = share === null ? null : Math.round(share * 100);
   const tone =
@@ -104,6 +104,16 @@ export function ContextGauge({
                 style={{ width: `${percent}%` }}
               />
             </div>
+          )}
+          {parts && parts.length > 0 && (
+            <ul className="mt-2 space-y-0.5">
+              {parts.map((part) => (
+                <li key={part.name} className="flex justify-between gap-3 text-muted">
+                  <span className="truncate">{part.name}</span>
+                  <span className="tabular-nums">{formatTokens(part.tokens)}</span>
+                </li>
+              ))}
+            </ul>
           )}
           <p className="mt-2 text-muted">
             {windowTokens === null

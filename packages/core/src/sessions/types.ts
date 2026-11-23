@@ -75,6 +75,8 @@ export interface AgentSession {
   close(): void;
   /** Replaces the conversation with a summary to free context; only some agents support it. */
   compact?(): void;
+  /** Measures the context the conversation uses and reports it as a `context-usage` event. */
+  refreshContext?(): Promise<void>;
 }
 
 /** Tool through which Claude Code asks the user multiple-choice questions. */
@@ -137,6 +139,18 @@ export interface ContextUsage {
   usedTokens: number;
   /** Size of the model's context window; null when the server does not report it. */
   windowTokens: number | null;
+  /**
+   * Tokens at which the agent compacts the conversation by itself, when it reports it. Usage
+   * updates without it keep the last reported value.
+   */
+  autoCompactTokens?: number | null;
+  /** What the context is made of, when the agent reports it, such as Claude Code's categories. */
+  parts?: ContextPart[];
+}
+
+export interface ContextPart {
+  name: string;
+  tokens: number;
 }
 
 export interface TurnSummary {
@@ -187,7 +201,8 @@ export type SessionEvent =
   | ({ type: 'context-usage' } & ContextUsage)
   | { type: 'compaction-start'; id: string; automatic: boolean; tokensBefore: number }
   /** The summary that replaced the conversation; null when the compaction failed or stopped. */
-  | { type: 'compaction-end'; id: string; summary: string | null }
+  /** `automatic`, when given, corrects what the start reported. */
+  | { type: 'compaction-end'; id: string; summary: string | null; automatic?: boolean }
   | { type: 'error'; id: string; message: string }
   /**
    * An entry the agent added to its own conversation record, such as Claude Code's message

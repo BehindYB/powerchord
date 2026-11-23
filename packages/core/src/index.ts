@@ -32,6 +32,7 @@ export type {
   AgentQuestion,
   AgentSession,
   AgentTurnRef,
+  ContextPart,
   ContextUsage,
   ModelChatMode,
   PermissionBehavior,

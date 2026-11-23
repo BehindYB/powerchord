@@ -2,6 +2,7 @@
 export type {
   AgentQuestion,
   AgentTurnRef,
+  ContextPart,
   ContextUsage,
   PermissionBehavior,
   QuestionAnswers,

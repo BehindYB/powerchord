@@ -75,11 +75,22 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
     case 'usage-limits':
       return { ...state, usageLimits: { ...state.usageLimits, ...event.limits } };
 
-    case 'context-usage':
+    case 'context-usage': {
+      const autoCompactTokens =
+        event.autoCompactTokens !== undefined
+          ? event.autoCompactTokens
+          : (state.context?.autoCompactTokens ?? null);
       return {
         ...state,
-        context: { usedTokens: event.usedTokens, windowTokens: event.windowTokens },
+        context: {
+          usedTokens: event.usedTokens,
+          windowTokens: event.windowTokens,
+          ...(autoCompactTokens !== null ? { autoCompactTokens } : {}),
+          // A breakdown describes one measurement; a newer total without one replaces it.
+          ...(event.parts ? { parts: event.parts } : {}),
+        },
       };
+    }
 
     case 'compaction-start':
       return withItems(state, [
@@ -99,7 +110,12 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
         state,
         replaceItem(items, event.id, (item) =>
           item.kind === 'compaction'
-            ? { ...item, status: event.summary === null ? 'error' : 'done', summary: event.summary }
+            ? {
+                ...item,
+                status: event.summary === null ? 'error' : 'done',
+                summary: event.summary,
+                automatic: event.automatic ?? item.automatic,
+              }
             : item,
         ),
       );

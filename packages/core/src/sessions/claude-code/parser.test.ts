@@ -300,6 +300,50 @@ describe('ClaudeStreamParser', () => {
     });
   });
 
+  it('shows a compaction while it runs', () => {
+    const parser = new ClaudeStreamParser();
+    const parse = (message: object) => parser.parseLine(JSON.stringify(message));
+    parse({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: { id: 'msg_1', content: [], usage: { input_tokens: 37000, output_tokens: 18 } },
+    });
+    const started = parse({ type: 'system', subtype: 'status', status: 'compacting', uuid: 's1' });
+    expect(started).toEqual([
+      { type: 'compaction-start', id: 's1', automatic: false, tokensBefore: 37018 },
+    ]);
+    expect(
+      parse({ type: 'system', subtype: 'status', status: null, compact_result: 'success' }),
+    ).toEqual([]);
+    const finished = parse({
+      type: 'system',
+      subtype: 'compact_boundary',
+      uuid: 'c1',
+      compact_metadata: { trigger: 'auto', pre_tokens: 37018, post_tokens: 2299 },
+    });
+    expect(finished).toEqual([{ type: 'compaction-end', id: 's1', summary: '', automatic: true }]);
+    const state = [...started, ...finished].reduce(applySessionEvent, createSessionState());
+    expect(state.items).toEqual([
+      {
+        kind: 'compaction',
+        id: 's1',
+        status: 'done',
+        automatic: true,
+        tokensBefore: 37018,
+        summary: '',
+      },
+    ]);
+  });
+
+  it('marks a failed compaction', () => {
+    const parser = new ClaudeStreamParser();
+    const parse = (message: object) => parser.parseLine(JSON.stringify(message));
+    parse({ type: 'system', subtype: 'status', status: 'compacting', uuid: 's1' });
+    expect(
+      parse({ type: 'system', subtype: 'status', status: null, compact_result: 'failed' }),
+    ).toEqual([{ type: 'compaction-end', id: 's1', summary: null }]);
+  });
+
   it('reports failed turns as errors', () => {
     const events = parseAll([
       JSON.stringify({

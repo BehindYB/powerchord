@@ -65,6 +65,26 @@ describe('applySessionEvent', () => {
     expect(applySessionEvent(state, { type: 'block-delta', id: 'missing', text: 'x' })).toBe(state);
   });
 
+  it('keeps the auto-compact threshold while usage updates without a breakdown', () => {
+    const measured = applySessionEvent(createSessionState(), {
+      type: 'context-usage',
+      usedTokens: 37000,
+      windowTokens: 1000000,
+      autoCompactTokens: 967000,
+      parts: [{ name: 'Messages', tokens: 8800 }],
+    });
+    const updated = applySessionEvent(measured, {
+      type: 'context-usage',
+      usedTokens: 41000,
+      windowTokens: 1000000,
+    });
+    expect(updated.context).toEqual({
+      usedTokens: 41000,
+      windowTokens: 1000000,
+      autoCompactTokens: 967000,
+    });
+  });
+
   it('merges usage windows', () => {
     const state = run([
       { type: 'usage-limits', limits: { fiveHour: { utilization: 0.1, resetsAt: 1 } } },

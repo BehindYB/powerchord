@@ -13,6 +13,7 @@ import {
   CLAUDE_PERMISSION_MODES,
   QUESTION_TOOL_NAME,
   type AgentSession,
+  type ContextPart,
   type PermissionBehavior,
   type PermissionMode,
   type PermissionScope,
@@ -202,6 +203,23 @@ export class ClaudeCodeSession implements AgentSession {
     }
   }
 
+  /**
+   * Asks Claude Code how much of the context window the conversation uses, with the control
+   * request behind the Agent SDK's `getContextUsage`. It runs no model request, so it costs no
+   * usage; a process started only for it waits for the next message.
+   */
+  async refreshContext(): Promise<void> {
+    if (this.closed || this.status === 'running') return;
+    const started = !this.child;
+    if (started) this.startProcess();
+    try {
+      const usage = contextUsage(await this.control({ subtype: 'get_context_usage' }));
+      if (usage) this.emit({ type: 'context-usage', ...usage });
+    } finally {
+      if (started && this.status === 'starting') this.setStatus('idle');
+    }
+  }
+
   private control(request: Record<string, unknown>): Promise<unknown> {
     const child = this.child;
     if (!child) return Promise.reject(new Error('Claude Code is not running.'));
@@ -368,6 +386,8 @@ export class ClaudeCodeSession implements AgentSession {
     if (event.type === 'turn-complete') {
       this.setStatus('idle');
       if (this.restartAfterTurn) this.stopProcess();
+      // Measures the context after the turn, compactions included; failures keep the estimate.
+      else void this.refreshContext().catch(() => undefined);
     }
   }
 
@@ -426,4 +446,38 @@ export class ClaudeCodeSession implements AgentSession {
       this.respondToPermission(requestId, 'deny', 'once');
     }
   }
+}
+
+/** Reads the `get_context_usage` response; parts the model does not hold now are left out. */
+function contextUsage(response: unknown): {
+  usedTokens: number;
+  windowTokens: number | null;
+  autoCompactTokens: number | null;
+  parts: ContextPart[];
+} | null {
+  if (typeof response !== 'object' || response === null) return null;
+  const fields = response as Record<string, unknown>;
+  const total = fields['totalTokens'];
+  const max = fields['maxTokens'];
+  if (typeof total !== 'number' || !Number.isFinite(total)) return null;
+  const windowTokens = typeof max === 'number' && max > 0 ? max : null;
+  const categories = Array.isArray(fields['categories']) ? fields['categories'] : [];
+  const parts: ContextPart[] = [];
+  let buffer: number | null = null;
+  for (const category of categories) {
+    if (typeof category !== 'object' || category === null) continue;
+    const entry = category as Record<string, unknown>;
+    const name = entry['name'];
+    const tokens = entry['tokens'];
+    if (typeof name !== 'string' || typeof tokens !== 'number' || tokens <= 0) continue;
+    // Claude Code compacts by itself once the free space shrinks to its buffer.
+    if (entry['kind'] === 'buffer') buffer = (buffer ?? 0) + tokens;
+    else if (entry['kind'] === 'used') parts.push({ name, tokens });
+  }
+  return {
+    usedTokens: total,
+    windowTokens,
+    autoCompactTokens: windowTokens !== null && buffer !== null ? windowTokens - buffer : null,
+    parts,
+  };
 }

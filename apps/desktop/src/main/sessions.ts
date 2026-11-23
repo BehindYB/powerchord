@@ -814,6 +814,18 @@ export class SessionManager {
     agent.compact();
   }
 
+  /**
+   * Has the agent measure its context, for agents that can without a turn. Problems such as a
+   * missing agent are reported when the user sends a message.
+   */
+  private refreshContext(session: ManagedSession): void {
+    const { status } = session.summary;
+    if (status === 'running' || status === 'starting') return;
+    void this.agentFor(session)
+      .then((agent) => agent.refreshContext?.())
+      .catch(() => undefined);
+  }
+
   /** File checkpoints of a model chat, kept in PowerChord's data folder. */
   private checkpoints(sessionId: string): FileCheckpointStore {
     return new FileCheckpointStore(join(app.getPath('userData'), 'checkpoints', sessionId));
@@ -933,6 +945,7 @@ export class SessionManager {
       resetConversation: summary.agentId === 'claude-code' && (isFirst || resumeAt === null),
     });
     this.handleEvent(summary.id, { type: 'status', status: 'idle' });
+    if (summary.agentId === 'claude-code') this.refreshContext(session);
     return target.text;
   }
 
@@ -1049,6 +1062,9 @@ export class SessionManager {
         // Model chats start no process, so an opened chat starts at once to report its context.
         // Problems such as a missing server are reported when the user sends a message.
         void this.agentFor(session).catch(() => undefined);
+      } else if (agentId === 'claude-code' && session.state.context === null) {
+        // A new or rewound chat has no measurement yet; Claude Code reports one without a turn.
+        this.refreshContext(session);
       }
       return { summary: session.summary, state: session.state, seq: session.seq };
     });

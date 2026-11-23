@@ -56,6 +56,8 @@ export class ClaudeStreamParser {
   private model: string | null = null;
   /** Context window of the session's model, reported in each result's `modelUsage`. */
   private contextWindow: number | null = null;
+  /** The compaction Claude Code reported as started and has not finished yet. */
+  private compactionId: string | null = null;
   private contextTokens: number | null = null;
 
   /** Parses one stdout line. Unknown or malformed lines yield no events. */
@@ -105,6 +107,7 @@ export class ClaudeStreamParser {
 
   private parseSystem(message: Json): SessionEvent[] {
     if (message['subtype'] === 'compact_boundary') return this.parseCompactBoundary(message);
+    if (message['subtype'] === 'status') return this.parseStatus(message);
     if (message['subtype'] !== 'init') return [];
     const agentSessionId = str(message['session_id']);
     if (agentSessionId === null) return [];
@@ -119,20 +122,54 @@ export class ClaudeStreamParser {
     ];
   }
 
+  /** Claude Code reports `compacting` while it summarizes, then the outcome of the compaction. */
+  private parseStatus(message: Json): SessionEvent[] {
+    if (message['status'] === 'compacting' && this.compactionId === null) {
+      const id = str(message['uuid']) ?? `compaction-${Date.now()}`;
+      this.compactionId = id;
+      return [
+        {
+          type: 'compaction-start',
+          id,
+          // Claude Code does not say here whether it compacts on its own.
+          automatic: false,
+          tokensBefore: this.contextTokens ?? 0,
+        },
+      ];
+    }
+    const result = str(message['compact_result']);
+    if (result !== null && result !== 'success' && this.compactionId !== null) {
+      const id = this.compactionId;
+      this.compactionId = null;
+      return [{ type: 'compaction-end', id, summary: null }];
+    }
+    return [];
+  }
+
   /** Claude Code compacted its conversation, on `/compact` or automatically. */
   private parseCompactBoundary(message: Json): SessionEvent[] {
     const metadata = isObject(message['compact_metadata']) ? message['compact_metadata'] : {};
-    const id = str(message['uuid']) ?? `compaction-${Date.now()}`;
-    // Claude Code keeps its summary to itself; the transcript shows where it compacted.
-    return [
-      {
+    const events: SessionEvent[] = [];
+    let id = this.compactionId;
+    this.compactionId = null;
+    if (id === null) {
+      id = str(message['uuid']) ?? `compaction-${Date.now()}`;
+      events.push({
         type: 'compaction-start',
         id,
         automatic: metadata['trigger'] === 'auto',
         tokensBefore: num(metadata['pre_tokens']) ?? this.contextTokens ?? 0,
-      },
-      { type: 'compaction-end', id, summary: '' },
-    ];
+      });
+    }
+    // Claude Code keeps its summary to itself; the transcript shows where it compacted.
+    events.push({
+      type: 'compaction-end',
+      id,
+      summary: '',
+      automatic: metadata['trigger'] === 'auto',
+    });
+    // `post_tokens` counts the kept messages only; the session measures the whole context next.
+    return events;
   }
 
   /** Records the UUID of a conversation entry, used to rewind the conversation and its files. */
