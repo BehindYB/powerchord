@@ -100,6 +100,8 @@ export function App() {
               onFocus={() => setFocusedPane(index)}
               onClosePane={split ? () => closePane(index) : null}
               onDeleted={() => closePane(index)}
+              sessions={sessions}
+              onOpenSession={openSession}
             />
           );
         })}

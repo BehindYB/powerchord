@@ -1,5 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import {
+  DELEGATION_TOOL_TEXT,
+  delegationWaitMs,
+  formatDelegationResult,
+  type AgentDelegationGateway,
+} from './delegation.ts';
 import { TASK_STATUSES, type HubStore, type HubTask } from './store.ts';
 
 /*
@@ -40,6 +46,15 @@ export interface HubContext {
   store: HubStore;
   models: LocalModelGateway;
   memory?: ProjectMemoryGateway;
+  delegation?: AgentDelegationGateway;
+}
+
+/** Who a hub client is, beyond its name. */
+export interface HubClientScope {
+  /** Working folder of a session PowerChord drives, the default project of the memory tools. */
+  projectFolder?: string | null;
+  /** PowerChord session the client belongs to; sub-chats it starts are linked to it. */
+  sessionId?: string | null;
 }
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
@@ -66,16 +81,15 @@ function taskOverview(task: HubTask) {
 
 const statusSchema = z.enum(TASK_STATUSES as [string, ...string[]]);
 
-/**
- * Registers the hub tools on an MCP server instance for one client. `projectFolder` is the working
- * folder of a session PowerChord drives, used when a memory tool is called without a folder.
- */
+/** Registers the hub tools on an MCP server instance for one client. */
 export function registerHubTools(
   server: McpServer,
   hub: HubContext,
   author: string,
-  projectFolder: string | null = null,
+  scope: HubClientScope = {},
 ): void {
+  const projectFolder = scope.projectFolder ?? null;
+  const parentSessionId = scope.sessionId ?? null;
   server.registerTool(
     'list_local_models',
     {
@@ -241,6 +255,79 @@ export function registerHubTools(
         ),
       ),
   );
+
+  const delegation = hub.delegation;
+  if (delegation) {
+    const tools = DELEGATION_TOOL_TEXT;
+    server.registerTool(
+      tools.list.name,
+      { description: tools.list.description, inputSchema: {} },
+      () => guarded(async () => json(await delegation.targets())),
+    );
+    server.registerTool(
+      tools.delegate.name,
+      {
+        description: tools.delegate.description,
+        inputSchema: {
+          agent: z.string().describe(tools.delegate.agent),
+          prompt: z.string().min(1).describe(tools.delegate.prompt),
+          model: z.string().optional().describe(tools.delegate.model),
+          session_id: z.string().optional().describe(tools.delegate.sessionId),
+          folder: z
+            .string()
+            .optional()
+            .describe('Absolute path of the project folder; defaults to the current project'),
+          wait_seconds: z.number().optional().describe(tools.delegate.wait),
+        },
+      },
+      (args, extra) =>
+        guarded(async () => {
+          const waitMs = delegationWaitMs(args.wait_seconds);
+          const result = args.session_id
+            ? await delegation.send({
+                parentSessionId,
+                sessionId: args.session_id,
+                prompt: args.prompt,
+                waitMs,
+                signal: extra.signal,
+              })
+            : await delegation.start({
+                parentSessionId,
+                folder: args.folder ?? projectFolder,
+                author,
+                agent: args.agent,
+                model: args.model ?? null,
+                prompt: args.prompt,
+                waitMs,
+                signal: extra.signal,
+              });
+          return text(formatDelegationResult(result));
+        }),
+    );
+    server.registerTool(
+      tools.wait.name,
+      {
+        description: tools.wait.description,
+        inputSchema: {
+          session_id: z.string().describe(tools.wait.sessionId),
+          wait_seconds: z.number().optional().describe(tools.delegate.wait),
+        },
+      },
+      (args, extra) =>
+        guarded(async () =>
+          text(
+            formatDelegationResult(
+              await delegation.wait({
+                parentSessionId,
+                sessionId: args.session_id,
+                waitMs: delegationWaitMs(args.wait_seconds),
+                signal: extra.signal,
+              }),
+            ),
+          ),
+        ),
+    );
+  }
 
   const memory = hub.memory;
   if (!memory) return;

@@ -57,6 +57,16 @@ The MCP server lets any agent, whether driven by PowerChord or used directly by 
 3. The private memory of a project is stored in PowerChord's data folder, never in the project folder. PowerChord gives it to model chats in their system prompt and to Claude Code through its documented `--append-system-prompt` option. Every agent can read it and add notes through the hub tools `read_project_memory` and `remember`, which follow each agent's own approval settings; model chats ask before adding a note unless their mode allows file changes.
 4. Memory is the user's context about a project, which the user can read and edit at any time. Like the other hub tools, the memory tools never give agents instructions on PowerChord's behalf.
 
+## Delegation between agents
+
+An agent can ask PowerChord to hand work to another agent or model with the hub tool `delegate_to_agent` (model chats get the same tool). PowerChord then opens a sub-chat:
+
+1. A sub-chat is an ordinary PowerChord session, listed under the chat that started it, which the user can open, follow, stop or delete at any time. It runs the same official, unmodified agents, signed in the same way, as a chat the user starts by hand; nothing about it bypasses the vendors' own clients or login flows.
+2. The sub-chat works in the delegating chat's project folder. It keeps its agent's permission prompts: it uses the delegating chat's mode when both run the same agent, and the agent's default mode otherwise. Pay-as-you-go sub-chats are confirmed against budgets like any message.
+3. Starting a sub-chat is a tool call of the delegating agent, approved by that agent's own permission settings; model chats ask first unless their mode allows commands. Agents outside PowerChord, which the user is not watching in PowerChord, need the user's confirmation in a PowerChord dialog for every sub-chat.
+4. Sub-chats cannot delegate further, and an agent can only follow or continue the sub-chats it started. Each wait for an answer is limited to nine minutes, within the agents' own tool timeouts.
+5. PowerChord passes the task text as the delegating agent wrote it. It adds no instructions of its own and never acts on a vendor service with another agent's credentials.
+
 ## Network discovery
 
 PowerChord can look for model servers (Ollama, LM Studio, llama.cpp, vLLM and similar) on the user's networks. To keep this a convenience rather than a scanner:

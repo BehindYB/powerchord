@@ -43,6 +43,8 @@ export interface ClaudeCodeSessionOptions {
   resumeSessionId?: string;
   /** Gives the session PowerChord's hub tools (shared tasks and notes, local models). */
   hubTools?: boolean;
+  /** PowerChord session id given to the hub, which links delegated sub-chats to this session. */
+  hubSessionId?: string;
   /** Author name recorded for hub changes made by this session. */
   label?: string;
   /** Added to Claude Code's system prompt with its documented `--append-system-prompt` option. */
@@ -84,6 +86,7 @@ export class ClaudeCodeSession implements AgentSession {
       requestPermission: (request) => this.requestPermission(request),
       hub: options.hubTools ?? false,
       projectFolder: options.cwd,
+      ...(options.hubSessionId ? { sessionId: options.hubSessionId } : {}),
     };
     this.registration = options.mcp.register(this.mcpHandlers);
   }

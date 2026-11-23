@@ -137,6 +137,8 @@ export function SessionView({
   onFocus,
   onClosePane,
   onDeleted,
+  sessions,
+  onOpenSession,
 }: {
   summary: SessionSummary;
   /** Whether this pane receives sidebar navigation; only shown when several panes are open. */
@@ -145,8 +147,17 @@ export function SessionView({
   /** Present when the session is shown next to others. */
   onClosePane: (() => void) | null;
   onDeleted: () => void;
+  /** All sessions, to link sub-chats and the chat that delegated this one. */
+  sessions: SessionSummary[];
+  onOpenSession: (id: string, split: boolean) => void;
 }) {
   const state = useSessionState(summary.id);
+  const parent = summary.parentSessionId
+    ? sessions.find((session) => session.id === summary.parentSessionId)
+    : undefined;
+  const subChats = sessions
+    .filter((session) => session.parentSessionId === summary.id)
+    .sort((a, b) => a.createdAt - b.createdAt);
   const { endpoints } = useModelEndpoints();
   const claudeModels = useClaudeModels();
   const isLocal = summary.agentId === 'local-model' || summary.agentId === 'api-model';
@@ -212,6 +223,15 @@ export function SessionView({
         className={`relative flex flex-wrap items-center gap-3 border-b border-border ${padding} ${onClosePane ? 'py-3 pr-12' : 'pb-3'}`}
       >
         <div className="min-w-0">
+          {parent && (
+            <button
+              type="button"
+              onClick={() => onOpenSession(parent.id, false)}
+              className="block max-w-full truncate text-xs text-muted hover:text-text"
+            >
+              ↖ Sub-chat of {parent.title}
+            </button>
+          )}
           <h1 className="truncate text-base font-semibold">{summary.title}</h1>
           <p className="truncate text-xs text-muted" title={summary.cwd ?? undefined}>
             {[agentLabel, state?.model ?? summary.model ?? 'starting', summary.cwd]
@@ -267,6 +287,32 @@ export function SessionView({
         </div>
       </div>
 
+      {subChats.length > 0 && (
+        <div
+          className={`flex flex-wrap items-center gap-2 border-b border-border ${padding} py-2 text-xs`}
+        >
+          <span className="text-muted">Sub-chats</span>
+          {subChats.map((chat) => (
+            <button
+              key={chat.id}
+              type="button"
+              onClick={() => onOpenSession(chat.id, true)}
+              title={[SESSION_AGENT_NAMES[chat.agentId], chat.model].filter(Boolean).join(' · ')}
+              className="flex max-w-56 items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 hover:bg-hover"
+            >
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  chat.status === 'running' || chat.status === 'starting'
+                    ? 'animate-pulse bg-accent'
+                    : 'bg-border'
+                }`}
+              />
+              <span className="truncate">{chat.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div
         ref={scroller}
         onScroll={(event) => {
@@ -285,6 +331,7 @@ export function SessionView({
               showCost={summary.provider !== null}
               onRespond={respond}
               onAnswer={answer}
+              onOpenSession={(id) => onOpenSession(id, true)}
             />
           ))}
           {state?.status === 'starting' && (

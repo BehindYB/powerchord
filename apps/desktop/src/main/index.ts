@@ -20,8 +20,8 @@ const TITLE_BAR_HEIGHT = 40;
 const mcp = new PowerChordMcpServer();
 const projects = new ProjectStore();
 const memory = new ProjectMemoryService(projects);
-const hub = new HubManager(mcp, memory.gateway());
 const sessions = new SessionManager(mcp, projects, memory);
+const hub = new HubManager(mcp, memory.gateway(), sessions.delegation);
 
 // Must match the `--pc-bg` token in the renderer stylesheet.
 const BACKGROUND = { light: '#f7f7f8', dark: '#18181b' } as const;

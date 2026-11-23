@@ -138,6 +138,7 @@ export type {
   HubContext,
   LocalModelGateway,
   LocalModelInfo,
+  HubClientScope,
   ProjectMemoryGateway,
 } from './hub/tools.ts';
 export {
@@ -168,3 +169,17 @@ export {
   listAnthropicModels,
   streamAnthropicChat,
 } from './models/anthropic.ts';
+export {
+  DEFAULT_DELEGATION_WAIT_SECONDS,
+  DELEGATION_TOOL_TEXT,
+  delegationSessionId,
+  delegationWaitMs,
+  formatDelegationResult,
+  MAX_DELEGATION_WAIT_SECONDS,
+  type AgentDelegationGateway,
+  type DelegationRequest,
+  type DelegationResult,
+  type DelegationStatus,
+  type DelegationTarget,
+  type SessionDelegation,
+} from './hub/delegation.ts';

@@ -199,6 +199,8 @@ export interface SessionSummary {
   lastActiveAt: number;
   /** Archived chats are kept but listed apart; sending a message brings them back. */
   archived: boolean;
+  /** Session that delegated this sub-chat to its agent; null for chats the user started. */
+  parentSessionId: string | null;
 }
 
 /** What the renderer does after a session's context menu closes. */

@@ -1,4 +1,6 @@
 import {
+  delegationSessionId,
+  DELEGATION_TOOL_TEXT,
   parseAgentQuestions,
   QUESTION_TOOL_NAME,
   type PermissionBehavior,
@@ -55,8 +57,24 @@ export function describeToolInput(name: string, input: unknown): string {
   return name === 'ExitPlanMode' ? 'Proposed plan' : summary;
 }
 
-function ToolCallView({ item }: { item: Extract<TranscriptItem, { kind: 'tool-call' }> }) {
+/** Whether a tool call delegates to another agent in a sub-chat. */
+function isDelegationTool(name: string): boolean {
+  return (
+    name.endsWith(DELEGATION_TOOL_TEXT.delegate.name) ||
+    name.endsWith(DELEGATION_TOOL_TEXT.wait.name)
+  );
+}
+
+function ToolCallView({
+  item,
+  onOpenSession,
+}: {
+  item: Extract<TranscriptItem, { kind: 'tool-call' }>;
+  onOpenSession: ((sessionId: string) => void) | undefined;
+}) {
   const [open, setOpen] = useState(false);
+  const subChat =
+    onOpenSession && isDelegationTool(item.name) ? delegationSessionId(item.output) : null;
   const statusClass =
     item.status === 'running'
       ? 'bg-accent animate-pulse'
@@ -79,6 +97,17 @@ function ToolCallView({ item }: { item: Extract<TranscriptItem, { kind: 'tool-ca
         </span>
         <span className="ml-auto text-xs text-muted">{open ? 'Hide' : 'Details'}</span>
       </button>
+      {subChat && (
+        <div className="border-t border-border px-3 py-1.5">
+          <button
+            type="button"
+            onClick={() => onOpenSession?.(subChat)}
+            className="text-xs text-accent hover:underline"
+          >
+            Open sub-chat
+          </button>
+        </div>
+      )}
       {open && (
         <div className="border-t border-border px-3 py-2">
           <pre className="max-h-48 overflow-auto font-mono text-xs whitespace-pre-wrap select-text">
@@ -350,6 +379,7 @@ export function TranscriptItemView({
   showCost,
   onRespond,
   onAnswer,
+  onOpenSession,
 }: {
   item: TranscriptItem;
   agentName: string;
@@ -357,6 +387,8 @@ export function TranscriptItemView({
   showCost: boolean;
   onRespond: (requestId: string, behavior: PermissionBehavior, scope: 'once' | 'session') => void;
   onAnswer: (requestId: string, answers: QuestionAnswers) => void;
+  /** Opens a sub-chat linked from a delegation tool call. */
+  onOpenSession?: (sessionId: string) => void;
 }) {
   switch (item.kind) {
     case 'user':
@@ -386,7 +418,9 @@ export function TranscriptItemView({
       );
     case 'tool-call':
       // Questions appear as their own card.
-      return item.name === QUESTION_TOOL_NAME ? null : <ToolCallView item={item} />;
+      return item.name === QUESTION_TOOL_NAME ? null : (
+        <ToolCallView item={item} onOpenSession={onOpenSession} />
+      );
     case 'permission':
       if (item.toolName === QUESTION_TOOL_NAME) {
         return (

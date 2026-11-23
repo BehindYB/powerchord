@@ -49,6 +49,7 @@ import {
   type SessionSummary,
 } from '../shared/ipc';
 import { getApiKey } from './api-keys';
+import { DelegationService } from './delegation';
 import { PROVIDER_APIS, providerConnection, providerName } from './api-models';
 import { endpointConnection, findEndpoint } from './models';
 import type { ProjectMemoryService } from './memory';
@@ -159,6 +160,21 @@ export class SessionManager {
   private readonly memory: ProjectMemoryService;
 
   /** The MCP server must be started before sessions are created. */
+  /** Starts sub-chats for agents that delegate work; given to the hub and to model chats. */
+  readonly delegation = new DelegationService({
+    get: (sessionId) => {
+      const session = this.sessions.get(sessionId);
+      return session ? { summary: session.summary, state: session.state } : null;
+    },
+    createChild: (request, parentSessionId) => this.create(request, parentSessionId),
+    sendMessage: (sessionId, text) =>
+      this.send(
+        BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null,
+        this.require(sessionId),
+        text,
+      ),
+  });
+
   constructor(mcp: PowerChordMcpServer, projects: ProjectStore, memory: ProjectMemoryService) {
     this.mcp = mcp;
     this.projects = projects;
@@ -178,6 +194,7 @@ export class SessionManager {
           provider: summary.provider ?? null,
           projectId: summary.projectId ?? null,
           archived: summary.archived ?? false,
+          parentSessionId: summary.parentSessionId ?? null,
           status: 'idle',
         },
         state: settleSessionState(state),
@@ -399,12 +416,16 @@ export class SessionManager {
     return { cwd: request.cwd, permissionMode: request.permissionMode };
   }
 
-  private async create(request: CreateSessionRequest): Promise<SessionSummary> {
+  private async create(
+    request: CreateSessionRequest,
+    parentSessionId: string | null = null,
+  ): Promise<SessionSummary> {
     const now = Date.now();
     const base = {
       id: randomUUID(),
       projectId: null,
       archived: false,
+      parentSessionId,
       title: 'New session',
       status: 'idle' as const,
       createdAt: now,
@@ -528,6 +549,7 @@ export class SessionManager {
         env: buildChildEnv(searchPath),
         mcp: this.mcp,
         hubTools: true,
+        hubSessionId: summary.id,
         label: agentLabel(summary),
         onEvent,
       };
@@ -607,6 +629,12 @@ export class SessionManager {
         ...(projectContext ? { projectContext } : {}),
         remember: (note: string) =>
           this.memory.rememberIn(folder, note, agentLabel(session.summary)),
+        delegation: {
+          gateway: this.delegation,
+          parentSessionId: summary.id,
+          folder,
+          author: () => agentLabel(session.summary),
+        },
       };
     }
 

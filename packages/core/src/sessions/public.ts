@@ -24,3 +24,4 @@ export {
   QUESTION_TOOL_NAME,
 } from './types.ts';
 export { applySessionEvent, settleSessionState } from './transcript.ts';
+export { delegationSessionId, DELEGATION_TOOL_TEXT } from '../hub/delegation.ts';

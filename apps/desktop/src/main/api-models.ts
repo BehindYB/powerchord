@@ -49,7 +49,7 @@ export async function providerConnection(provider: ApiProviderId): Promise<Model
   return { baseUrl: PROVIDER_APIS[provider].baseUrl, apiKey };
 }
 
-async function listApiModels(provider: ApiProviderId): Promise<ApiModelInfo[]> {
+export async function listApiModels(provider: ApiProviderId): Promise<ApiModelInfo[]> {
   const connection = await providerConnection(provider);
   const cached = cache.get(provider);
   if (cached && cached.key === connection.apiKey && Date.now() - cached.at < CACHE_MS) {

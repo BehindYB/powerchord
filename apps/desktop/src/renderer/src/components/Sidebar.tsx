@@ -164,6 +164,15 @@ export function Sidebar({
     ? sessions.filter((session) => matches.has(session.id))
     : sessions.filter((session) => !session.archived);
   const archived = sessions.filter((session) => session.archived);
+  // Sub-chats are listed under the chat that delegated them, unless that chat is gone.
+  const isNestedSubChat = (session: SessionSummary) =>
+    !searching &&
+    session.parentSessionId !== null &&
+    sessions.some((parent) => parent.id === session.parentSessionId);
+  const subChatsOf = (parentId: string) =>
+    visible
+      .filter((session) => session.parentSessionId === parentId)
+      .sort((a, b) => a.createdAt - b.createdAt);
   const toggleArchived = () => {
     setShowArchived(!showArchived);
     try {
@@ -174,10 +183,11 @@ export function Sidebar({
   };
 
   const chatsOf = (projectId: string) =>
-    visible.filter((session) => session.projectId === projectId);
+    visible.filter((session) => session.projectId === projectId && !isNestedSubChat(session));
   const looseChats = visible.filter(
     (session) =>
-      session.projectId === null || !projects.some((project) => project.id === session.projectId),
+      !isNestedSubChat(session) &&
+      (session.projectId === null || !projects.some((project) => project.id === session.projectId)),
   );
   // Most recently used projects first; a project's activity is its latest chat.
   const lastActive = (project: ProjectSummary) =>
@@ -210,39 +220,53 @@ export function Sidebar({
       }
     });
 
-  const sessionRow = (session: SessionSummary, nested: boolean) => {
+  const sessionRow = (session: SessionSummary, nested: boolean, depth = 0): ReactNode => {
     const active = openSessions.includes(session.id);
+    const subChats = searching ? [] : subChatsOf(session.id);
+    const indent = depth > 0 ? (nested ? 'pl-11' : 'pl-6') : nested ? 'pl-7' : 'pl-2';
     return (
-      <li key={session.id} className="group relative">
-        <button
-          type="button"
-          onClick={(event) => onOpenSession(session.id, event.ctrlKey || event.metaKey)}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            showSessionMenu(session);
-          }}
-          aria-current={active ? 'page' : undefined}
-          title={[session.title, session.model].filter(Boolean).join('\n')}
-          className={`flex w-full items-center gap-2 rounded-lg py-1.5 pr-8 text-left text-sm ${
-            nested ? 'pl-7' : 'pl-2'
-          } ${active ? 'bg-hover' : 'text-muted hover:bg-hover hover:text-text'}`}
-        >
-          <StatusDot status={session.status} />
-          <span className="truncate">{session.title}</span>
-          {searching && session.archived && (
-            <span className="shrink-0 text-xs text-muted">Archived</span>
-          )}
-        </button>
-        {canSplit && !active && (
+      <li key={session.id}>
+        <div className="group relative">
           <button
             type="button"
-            onClick={() => onOpenSession(session.id, true)}
-            aria-label={`Open ${session.title} side by side`}
-            title="Open side by side (Ctrl+click)"
-            className="absolute top-1/2 right-1 hidden -translate-y-1/2 rounded px-1.5 text-xs text-muted group-hover:block hover:bg-border hover:text-text"
+            onClick={(event) => onOpenSession(session.id, event.ctrlKey || event.metaKey)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              showSessionMenu(session);
+            }}
+            aria-current={active ? 'page' : undefined}
+            title={[session.title, session.model].filter(Boolean).join('\n')}
+            className={`flex w-full items-center gap-2 rounded-lg py-1.5 pr-8 text-left text-sm ${indent} ${
+              active ? 'bg-hover' : 'text-muted hover:bg-hover hover:text-text'
+            }`}
           >
-            ⊞
+            {depth > 0 && (
+              <span aria-label="Sub-chat" className="-mr-1 text-xs text-muted">
+                ↳
+              </span>
+            )}
+            <StatusDot status={session.status} />
+            <span className="truncate">{session.title}</span>
+            {searching && session.archived && (
+              <span className="shrink-0 text-xs text-muted">Archived</span>
+            )}
           </button>
+          {canSplit && !active && (
+            <button
+              type="button"
+              onClick={() => onOpenSession(session.id, true)}
+              aria-label={`Open ${session.title} side by side`}
+              title="Open side by side (Ctrl+click)"
+              className="absolute top-1/2 right-1 hidden -translate-y-1/2 rounded px-1.5 text-xs text-muted group-hover:block hover:bg-border hover:text-text"
+            >
+              ⊞
+            </button>
+          )}
+        </div>
+        {subChats.length > 0 && (
+          <ul className="flex flex-col gap-0.5">
+            {subChats.map((child) => sessionRow(child, nested, depth + 1))}
+          </ul>
         )}
       </li>
     );
@@ -313,7 +337,9 @@ export function Sidebar({
                 const isOpen =
                   searching ||
                   expanded.has(project.id) ||
-                  chats.some((chat) => openSessions.includes(chat.id));
+                  visible.some(
+                    (chat) => chat.projectId === project.id && openSessions.includes(chat.id),
+                  );
                 const current =
                   (view.kind === 'project' || view.kind === 'new') && view.projectId === project.id;
                 const shown = searching ? chats : chats.slice(0, CHATS_PER_PROJECT);

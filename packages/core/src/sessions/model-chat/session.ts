@@ -7,6 +7,12 @@ import {
   type ToolCall,
 } from '../../models/openai-compatible.ts';
 import { streamAnthropicChat } from '../../models/anthropic.ts';
+import {
+  DELEGATION_TOOL_TEXT,
+  delegationWaitMs,
+  formatDelegationResult,
+  type SessionDelegation,
+} from '../../hub/delegation.ts';
 import { approximateTokens, estimateCost, type ModelPrice } from '../../models/pricing.ts';
 import {
   isModelChatMode,
@@ -62,6 +68,8 @@ export interface ModelChatSessionOptions {
   projectContext?: string;
   /** Saves a note to the project memory; when set, chats with a folder get a remember tool. */
   remember?: (note: string) => Promise<void>;
+  /** Lets chats with a folder delegate work to other agents in sub-chats. */
+  delegation?: SessionDelegation;
 }
 
 /**
@@ -166,6 +174,97 @@ function rememberTool(remember: (note: string) => Promise<void>): WorkspaceTool 
   };
 }
 
+/** Tools to delegate work to other agents in sub-chats; starting one is approved like a command. */
+function delegationTools(delegation: SessionDelegation): WorkspaceTool[] {
+  const tools = DELEGATION_TOOL_TEXT;
+  const { gateway, parentSessionId } = delegation;
+  const string = (input: Record<string, unknown>, key: string): string | null =>
+    typeof input[key] === 'string' && input[key] ? input[key] : null;
+  return [
+    {
+      access: 'read',
+      definition: {
+        name: tools.list.name,
+        description: tools.list.description,
+        parameters: { type: 'object', properties: {} },
+      },
+      run: async () => JSON.stringify(await gateway.targets(), null, 2),
+    },
+    {
+      access: 'command',
+      definition: {
+        name: tools.delegate.name,
+        description: tools.delegate.description,
+        parameters: {
+          type: 'object',
+          properties: {
+            agent: { type: 'string', description: tools.delegate.agent },
+            prompt: { type: 'string', description: tools.delegate.prompt },
+            model: { type: 'string', description: tools.delegate.model },
+            session_id: { type: 'string', description: tools.delegate.sessionId },
+            wait_seconds: { type: 'number', description: tools.delegate.wait },
+          },
+          required: ['agent', 'prompt'],
+        },
+      },
+      run: async (input, context) => {
+        const prompt = string(input, 'prompt');
+        const agent = string(input, 'agent');
+        if (!prompt) throw new Error('"prompt" is required.');
+        const sessionId = string(input, 'session_id');
+        const waitMs = delegationWaitMs(input['wait_seconds']);
+        if (!sessionId && !agent) throw new Error('"agent" is required.');
+        const result = sessionId
+          ? await gateway.send({
+              parentSessionId,
+              sessionId,
+              prompt,
+              waitMs,
+              signal: context.signal,
+            })
+          : await gateway.start({
+              parentSessionId,
+              folder: delegation.folder,
+              author: delegation.author(),
+              agent: agent!,
+              model: string(input, 'model'),
+              prompt,
+              waitMs,
+              signal: context.signal,
+            });
+        return formatDelegationResult(result);
+      },
+    },
+    {
+      access: 'read',
+      definition: {
+        name: tools.wait.name,
+        description: tools.wait.description,
+        parameters: {
+          type: 'object',
+          properties: {
+            session_id: { type: 'string', description: tools.wait.sessionId },
+            wait_seconds: { type: 'number', description: tools.delegate.wait },
+          },
+          required: ['session_id'],
+        },
+      },
+      run: async (input, context) => {
+        const sessionId = string(input, 'session_id');
+        if (!sessionId) throw new Error('"session_id" is required.');
+        return formatDelegationResult(
+          await gateway.wait({
+            parentSessionId,
+            sessionId,
+            waitMs: delegationWaitMs(input['wait_seconds']),
+            signal: context.signal,
+          }),
+        );
+      },
+    },
+  ];
+}
+
 function compactionError(error: unknown): string {
   return `Could not compact the conversation: ${error instanceof Error ? error.message : String(error)}`;
 }
@@ -210,7 +309,11 @@ export class ModelChatSession implements AgentSession {
     this.mode = options.workspace?.mode ?? null;
     const remember = options.remember;
     this.tools = options.workspace
-      ? [...WORKSPACE_TOOLS, ...(remember ? [rememberTool(remember)] : [])]
+      ? [
+          ...WORKSPACE_TOOLS,
+          ...(remember ? [rememberTool(remember)] : []),
+          ...(options.delegation ? delegationTools(options.delegation) : []),
+        ]
       : [];
     const system = [
       options.workspace ? workspaceSystemPrompt(options.workspace.cwd) : '',

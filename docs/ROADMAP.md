@@ -84,6 +84,15 @@ Subscription-based agents come first, within the limits described in [COMPLIANCE
 - Private project memory in PowerChord's data folder, given to model chats and Claude Code at start and available to every agent through the hub tools `read_project_memory` and `remember`
 - Rules in [COMPLIANCE.md](COMPLIANCE.md#project-instructions-and-memory)
 
+## Phase 10: Delegation between agents (in progress)
+
+- Hub tools `list_agents`, `delegate_to_agent` and `wait_for_agent`, also available to model chats: an agent hands a task to another coding agent or model, which works in a sub-chat in the same project, and receives its answer
+- Sub-chats are listed under the chat that started them, linked from the delegation's tool card and the parent's header, and open side by side
+- Follow-ups to the same sub-chat; waits that stay within the agents' tool timeouts
+- Context menu for chats and projects (open side by side, archive, delete; new chat, open folder, remove); archived chats listed apart
+- Next: show Claude Code's own subagents as sub-chats; rewind a conversation and, optionally, its file changes
+- Rules in [COMPLIANCE.md](COMPLIANCE.md#delegation-between-agents)
+
 ## Next
 
 - Codex and Gemini CLI read the private memory through the hub tools; give it to them at start once their protocols offer a documented way

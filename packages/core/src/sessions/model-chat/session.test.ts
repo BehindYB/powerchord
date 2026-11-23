@@ -114,6 +114,74 @@ describe('ModelChatSession with a project folder', () => {
     session.close();
   });
 
+  it('delegates to other agents through the delegation gateway in full-access mode', async () => {
+    const delegate = {
+      name: 'delegate_to_agent',
+      arguments: '{"agent":"claude-code","prompt":"Review notes.txt"}',
+    };
+    server = await startFakeModelServer({
+      replies: [{ toolCalls: [delegate] }, { answer: ['Claude says it is fine.'] }],
+    });
+    const requests: unknown[] = [];
+    const events: SessionEvent[] = [];
+    const session = new ModelChatSession({
+      endpoint: { baseUrl: server.baseUrl },
+      model: 'qwen3:0.6b',
+      workspace: { cwd: folder, env: process.env, mode: 'full-access' },
+      delegation: {
+        parentSessionId: 'parent',
+        folder,
+        author: () => 'Local model',
+        gateway: {
+          targets: async () => [],
+          start: async (request) => {
+            requests.push({ ...request, signal: undefined });
+            return {
+              sessionId: '11111111-2222-3333-4444-555555555555',
+              title: 'Review notes.txt',
+              agent: 'claude-code',
+              status: 'completed',
+              waitingForUser: false,
+              response: 'Looks fine.',
+              error: null,
+            };
+          },
+          send: async () => {
+            throw new Error('unused');
+          },
+          wait: async () => {
+            throw new Error('unused');
+          },
+        },
+      },
+      onEvent: (event) => events.push(event),
+    });
+    session.send('Ask Claude to review my notes');
+    await waitFor(() => events.some((event) => event.type === 'turn-complete'));
+
+    expect(requests).toEqual([
+      {
+        parentSessionId: 'parent',
+        folder,
+        author: 'Local model',
+        agent: 'claude-code',
+        model: null,
+        prompt: 'Review notes.txt',
+        waitMs: 300_000,
+        signal: undefined,
+      },
+    ]);
+    const result = events.find((event) => event.type === 'tool-result');
+    expect(result).toMatchObject({ isError: false });
+    expect(JSON.parse((result as { output: string }).output)).toMatchObject({
+      status: 'completed',
+      response: 'Looks fine.',
+    });
+    const [first] = server.chatRequests as Request[];
+    expect(first?.tools).toHaveLength(10);
+    session.close();
+  });
+
   it('remembers tools allowed for the session', async () => {
     const command = { name: 'run_command', arguments: '{"command":"echo one"}' };
     server = await startFakeModelServer({

@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HubStore } from '../hub/store.ts';
+import type { AgentDelegationGateway, DelegationResult } from '../hub/delegation.ts';
 import type { LocalModelGateway } from '../hub/tools.ts';
 import {
   PERMISSION_TOOL_NAME,
@@ -238,5 +239,80 @@ describe('hub tools', () => {
     const client = server.register({ label: 'Claude Code', hub: true });
     const result = await callTool(client, 'ask_local_model', { prompt: 'Summarize this' });
     expect(result.text).toBe('[qwen3:0.6b on Ollama on 10.0.0.5]\n\necho: Summarize this');
+  });
+
+  it('start sub-chats linked to the delegating session, and continue and wait for them', async () => {
+    const calls: unknown[] = [];
+    const result = (sessionId: string, response: string): DelegationResult => ({
+      sessionId,
+      title: 'Write tests',
+      agent: 'codex',
+      status: 'completed',
+      waitingForUser: false,
+      response,
+      error: null,
+    });
+    const delegation: AgentDelegationGateway = {
+      targets: async () => [{ agent: 'codex', name: 'Codex', models: [], modelRequired: false }],
+      start: async (request) => {
+        calls.push({ ...request, signal: undefined });
+        return result('11111111-2222-3333-4444-555555555555', 'Done.');
+      },
+      send: async (request) => {
+        calls.push({ ...request, signal: undefined });
+        return result(request.sessionId, 'Also done.');
+      },
+      wait: async (request) => ({ ...result(request.sessionId, ''), status: 'running' }),
+    };
+    server.setHub({ store: new HubStore(join(directory, 'hub.json')), models, delegation });
+    const session = server.register({
+      label: 'Claude Code',
+      hub: true,
+      projectFolder: 'C:\\work\\app',
+      sessionId: 'parent-session',
+    });
+
+    expect(JSON.parse((await callTool(session, 'list_agents', {})).text)).toEqual([
+      { agent: 'codex', name: 'Codex', models: [], modelRequired: false },
+    ]);
+    const started = await callTool(session, 'delegate_to_agent', {
+      agent: 'codex',
+      prompt: 'Write tests',
+      wait_seconds: 5000,
+    });
+    expect(JSON.parse(started.text)).toEqual({
+      session_id: '11111111-2222-3333-4444-555555555555',
+      title: 'Write tests',
+      agent: 'codex',
+      status: 'completed',
+      response: 'Done.',
+    });
+    await callTool(session, 'delegate_to_agent', {
+      agent: 'codex',
+      prompt: 'And docs',
+      session_id: '11111111-2222-3333-4444-555555555555',
+    });
+    expect(calls).toEqual([
+      {
+        parentSessionId: 'parent-session',
+        folder: 'C:\\work\\app',
+        author: 'Claude Code',
+        agent: 'codex',
+        model: null,
+        prompt: 'Write tests',
+        // Waits are capped below the tool timeouts of the agents.
+        waitMs: 540_000,
+        signal: undefined,
+      },
+      {
+        parentSessionId: 'parent-session',
+        sessionId: '11111111-2222-3333-4444-555555555555',
+        prompt: 'And docs',
+        waitMs: 300_000,
+        signal: undefined,
+      },
+    ]);
+    const waited = await callTool(session, 'wait_for_agent', { session_id: 'abc' });
+    expect(JSON.parse(waited.text)).toMatchObject({ session_id: 'abc', status: 'running' });
   });
 });

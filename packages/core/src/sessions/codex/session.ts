@@ -54,6 +54,8 @@ export interface CodexSessionOptions {
   /** Codex thread to resume instead of starting a new one. */
   resumeThreadId?: string;
   hubTools?: boolean;
+  /** PowerChord session id given to the hub, which links delegated sub-chats to this session. */
+  hubSessionId?: string;
   label?: string;
 }
 
@@ -185,6 +187,7 @@ export class CodexSession implements AgentSession {
       label: options.label ?? 'Codex',
       hub: options.hubTools ?? false,
       projectFolder: options.cwd,
+      ...(options.hubSessionId ? { sessionId: options.hubSessionId } : {}),
     };
     this.registration = options.mcp.register(this.mcpHandlers);
   }
@@ -346,6 +349,9 @@ export class CodexSession implements AgentSession {
           [`mcp_servers.${MCP_SERVER_NAME}`]: {
             url: this.registration.url,
             bearer_token_env_var: HUB_TOKEN_VARIABLE,
+            // Delegation tools wait for a sub-chat's answer for up to nine minutes, longer than
+            // Codex's default tool timeout.
+            tool_timeout_sec: 600,
           },
         }
       : null;

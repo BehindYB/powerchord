@@ -36,6 +36,8 @@ export interface McpClientHandlers {
   hub?: boolean;
   /** Working folder of the session, the default project of the memory tools. */
   projectFolder?: string;
+  /** PowerChord session driving this client; sub-chats it delegates to are linked to it. */
+  sessionId?: string;
 }
 
 export interface McpClientRegistration {
@@ -223,7 +225,10 @@ export class PowerChordMcpServer {
     }
 
     if (handlers.hub && this.hub) {
-      registerHubTools(server, this.hub, handlers.label, handlers.projectFolder ?? null);
+      registerHubTools(server, this.hub, handlers.label, {
+        projectFolder: handlers.projectFolder ?? null,
+        sessionId: handlers.sessionId ?? null,
+      });
     }
     return server;
   }

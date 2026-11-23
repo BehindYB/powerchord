@@ -45,6 +45,8 @@ export interface AcpSessionOptions {
   /** Agent session to load instead of starting a new one. */
   resumeSessionId?: string;
   hubTools?: boolean;
+  /** PowerChord session id given to the hub, which links delegated sub-chats to this session. */
+  hubSessionId?: string;
   label?: string;
 }
 
@@ -168,6 +170,7 @@ export class AcpSession implements AgentSession {
       label: options.label ?? options.agentName,
       hub: options.hubTools ?? false,
       projectFolder: options.cwd,
+      ...(options.hubSessionId ? { sessionId: options.hubSessionId } : {}),
     };
     this.registration = options.mcp.register(this.mcpHandlers);
   }
