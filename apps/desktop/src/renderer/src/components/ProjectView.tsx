@@ -135,7 +135,13 @@ export function ProjectView({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{chat.title}</span>
                     <span className="block truncate text-xs text-muted">
-                      {[SESSION_AGENT_NAMES[chat.agentId], chat.model].filter(Boolean).join(' · ')}
+                      {[
+                        SESSION_AGENT_NAMES[chat.agentId],
+                        chat.model,
+                        chat.archived ? 'Archived' : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </span>
                   </span>
                   <span className="shrink-0 text-xs text-muted">

@@ -14,6 +14,7 @@ export type View =
 /** Chats listed under a project before "Show all" links to the project page. */
 const CHATS_PER_PROJECT = 5;
 const EXPANDED_KEY = 'powerchord.expandedProjects';
+const SHOW_ARCHIVED_KEY = 'powerchord.showArchived';
 
 interface SidebarProps {
   view: View;
@@ -149,9 +150,28 @@ export function Sidebar({
   const appInfo = useAppInfo();
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useExpandedProjects();
+  const [showArchived, setShowArchived] = useState(() => {
+    try {
+      return localStorage.getItem(SHOW_ARCHIVED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const matches = useSessionSearch(query, sessions);
-  const visible = matches ? sessions.filter((session) => matches.has(session.id)) : sessions;
   const searching = matches !== null;
+  // Searches include archived chats; otherwise they are listed in their own section.
+  const visible = matches
+    ? sessions.filter((session) => matches.has(session.id))
+    : sessions.filter((session) => !session.archived);
+  const archived = sessions.filter((session) => session.archived);
+  const toggleArchived = () => {
+    setShowArchived(!showArchived);
+    try {
+      localStorage.setItem(SHOW_ARCHIVED_KEY, String(!showArchived));
+    } catch {
+      // Not remembering the layout is harmless.
+    }
+  };
 
   const chatsOf = (projectId: string) =>
     visible.filter((session) => session.projectId === projectId);
@@ -171,6 +191,25 @@ export function Sidebar({
     .filter((project) => !searching || chatsOf(project.id).length > 0)
     .sort((a, b) => lastActive(b) - lastActive(a));
 
+  const showSessionMenu = (session: SessionSummary) =>
+    void window.powerchord
+      .showSessionMenu(session.id, { canSplit: canSplit && !openSessions.includes(session.id) })
+      .then((result) => {
+        if (result === 'open-side-by-side') onOpenSession(session.id, true);
+      });
+
+  const showProjectMenu = (project: ProjectSummary) =>
+    void window.powerchord.showProjectMenu(project.id).then((result) => {
+      if (result === 'new-chat') onNavigate({ kind: 'new', projectId: project.id });
+      else if (
+        result === 'removed' &&
+        (view.kind === 'project' || view.kind === 'new') &&
+        view.projectId === project.id
+      ) {
+        onNavigate({ kind: 'new' });
+      }
+    });
+
   const sessionRow = (session: SessionSummary, nested: boolean) => {
     const active = openSessions.includes(session.id);
     return (
@@ -178,6 +217,10 @@ export function Sidebar({
         <button
           type="button"
           onClick={(event) => onOpenSession(session.id, event.ctrlKey || event.metaKey)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            showSessionMenu(session);
+          }}
           aria-current={active ? 'page' : undefined}
           title={[session.title, session.model].filter(Boolean).join('\n')}
           className={`flex w-full items-center gap-2 rounded-lg py-1.5 pr-8 text-left text-sm ${
@@ -186,6 +229,9 @@ export function Sidebar({
         >
           <StatusDot status={session.status} />
           <span className="truncate">{session.title}</span>
+          {searching && session.archived && (
+            <span className="shrink-0 text-xs text-muted">Archived</span>
+          )}
         </button>
         {canSplit && !active && (
           <button
@@ -285,7 +331,15 @@ export function Sidebar({
                       </button>
                       <button
                         type="button"
-                        onClick={() => onNavigate({ kind: 'project', projectId: project.id })}
+                        onClick={() => {
+                          // Opening a project shows its chats; clicking it again folds them.
+                          setExpanded(project.id, !(current && isOpen));
+                          onNavigate({ kind: 'project', projectId: project.id });
+                        }}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          showProjectMenu(project);
+                        }}
                         aria-current={current ? 'page' : undefined}
                         title={project.folder}
                         className={`flex w-full items-center rounded-lg py-1.5 pr-8 pl-7 text-left text-sm ${
@@ -338,6 +392,25 @@ export function Sidebar({
             <ul className="flex flex-col gap-0.5">
               {looseChats.map((session) => sessionRow(session, false))}
             </ul>
+          )}
+
+          {!searching && archived.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={toggleArchived}
+                aria-expanded={showArchived}
+                className="mt-3 mb-1 flex w-full items-center gap-1 px-2 text-xs font-medium tracking-wide text-muted uppercase hover:text-text"
+              >
+                <span aria-hidden="true">{showArchived ? '▾' : '▸'}</span>
+                Archived ({archived.length})
+              </button>
+              {showArchived && (
+                <ul className="flex flex-col gap-0.5">
+                  {archived.map((session) => sessionRow(session, false))}
+                </ul>
+              )}
+            </>
           )}
         </div>
       </nav>

@@ -30,11 +30,14 @@ export const IpcChannel = {
   AnswerQuestion: 'sessions:answer-question',
   UpdateSessionSettings: 'sessions:update-settings',
   DeleteSession: 'sessions:delete',
+  SetSessionArchived: 'sessions:set-archived',
+  ShowSessionMenu: 'sessions:show-menu',
   OpenSessionIn: 'sessions:open-in',
   ListProjects: 'projects:list',
   CreateProject: 'projects:create',
   RenameProject: 'projects:rename',
   RemoveProject: 'projects:remove',
+  ShowProjectMenu: 'projects:show-menu',
   OpenProjectFolder: 'projects:open-folder',
   ProjectsChanged: 'projects:changed',
   GetProjectContext: 'projects:get-context',
@@ -194,7 +197,15 @@ export interface SessionSummary {
   createdAt: number;
   /** Time of the last message, used to order the session list. */
   lastActiveAt: number;
+  /** Archived chats are kept but listed apart; sending a message brings them back. */
+  archived: boolean;
 }
+
+/** What the renderer does after a session's context menu closes. */
+export type SessionMenuResult = 'open-side-by-side' | 'deleted' | null;
+
+/** What the renderer does after a project's context menu closes. */
+export type ProjectMenuResult = 'new-chat' | 'removed' | null;
 
 /** A folder whose chats PowerChord keeps together. */
 export interface ProjectSummary {
@@ -418,6 +429,12 @@ export interface PowerChordApi {
   ): Promise<void>;
   /** Asks for confirmation, then stops the session and removes it from the history. */
   deleteSession(sessionId: string): Promise<boolean>;
+  setSessionArchived(sessionId: string, archived: boolean): Promise<void>;
+  /**
+   * Shows a session's native context menu. Archiving and deleting happen in the main process;
+   * the result tells the renderer what is left for it to do.
+   */
+  showSessionMenu(sessionId: string, options: { canSplit: boolean }): Promise<SessionMenuResult>;
   openSessionIn(sessionId: string, target: OpenTarget): Promise<void>;
   onSessionEvent(listener: (message: SessionEventMessage) => void): () => void;
   onSessionsChanged(listener: (sessions: SessionSummary[]) => void): () => void;
@@ -429,6 +446,8 @@ export interface PowerChordApi {
   /** Asks for confirmation, then removes the project and its chats from PowerChord. */
   removeProject(projectId: string): Promise<boolean>;
   openProjectFolder(projectId: string): Promise<void>;
+  /** Shows a project's native context menu; see `showSessionMenu`. */
+  showProjectMenu(projectId: string): Promise<ProjectMenuResult>;
   onProjectsChanged(listener: (projects: ProjectSummary[]) => void): () => void;
   getProjectContext(projectId: string): Promise<ProjectContext>;
   saveProjectMemory(projectId: string, text: string): Promise<void>;

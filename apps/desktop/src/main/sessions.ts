@@ -31,7 +31,7 @@ import {
   type SessionEvent,
   type SessionState,
 } from '@powerchord/core';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import {
   IpcChannel,
   PERMISSION_MODES,
@@ -41,8 +41,10 @@ import {
   type CreateSessionRequest,
   type ModelChatFolder,
   type OpenTarget,
+  type ProjectMenuResult,
   type ProjectSummary,
   type SessionEventMessage,
+  type SessionMenuResult,
   type SessionSnapshot,
   type SessionSummary,
 } from '../shared/ipc';
@@ -175,6 +177,7 @@ export class SessionManager {
           ...summary,
           provider: summary.provider ?? null,
           projectId: summary.projectId ?? null,
+          archived: summary.archived ?? false,
           status: 'idle',
         },
         state: settleSessionState(state),
@@ -263,6 +266,58 @@ export class SessionManager {
       const error = await shell.openPath(project.folder);
       if (error) throw new Error(error);
     });
+    ipcMain.handle(IpcChannel.ShowProjectMenu, (event, projectId: unknown) =>
+      this.showProjectMenu(BrowserWindow.fromWebContents(event.sender), projectId),
+    );
+  }
+
+  private async showProjectMenu(
+    window: BrowserWindow | null,
+    projectId: unknown,
+  ): Promise<ProjectMenuResult> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error('Unknown project');
+    const choice = await popupMenu<'new-chat' | 'open-folder' | 'remove'>(window, [
+      { id: 'new-chat', label: 'New chat' },
+      { id: 'open-folder', label: 'Open folder' },
+      null,
+      { id: 'remove', label: 'Remove project…' },
+    ]);
+    if (choice === 'new-chat') return 'new-chat';
+    if (choice === 'open-folder') {
+      const error = await shell.openPath(project.folder);
+      if (error) throw new Error(error);
+    }
+    if (choice === 'remove' && (await this.removeProject(window, project.id))) return 'removed';
+    return null;
+  }
+
+  private async showSessionMenu(
+    window: BrowserWindow | null,
+    session: ManagedSession,
+    options: unknown,
+  ): Promise<SessionMenuResult> {
+    const canSplit =
+      typeof options === 'object' &&
+      options !== null &&
+      (options as { canSplit?: unknown }).canSplit === true;
+    const { archived } = session.summary;
+    const choice = await popupMenu<'split' | 'archive' | 'delete'>(window, [
+      ...(canSplit ? [{ id: 'split' as const, label: 'Open side by side' }, null] : []),
+      { id: 'archive', label: archived ? 'Unarchive' : 'Archive' },
+      { id: 'delete', label: 'Delete…' },
+    ]);
+    if (choice === 'split') return 'open-side-by-side';
+    if (choice === 'archive') this.setArchived(session, !archived);
+    if (choice === 'delete' && (await this.delete(window, session))) return 'deleted';
+    return null;
+  }
+
+  private setArchived(session: ManagedSession, archived: boolean): void {
+    if (session.summary.archived === archived) return;
+    session.summary = { ...session.summary, archived };
+    this.persist(session);
+    this.notifySessionsChanged();
   }
 
   /** Stops every agent process and writes pending session history. */
@@ -349,6 +404,7 @@ export class SessionManager {
     const base = {
       id: randomUUID(),
       projectId: null,
+      archived: false,
       title: 'New session',
       status: 'idle' as const,
       createdAt: now,
@@ -603,7 +659,8 @@ export class SessionManager {
       summaryChanged = true;
     }
     if (event.type === 'user-message') {
-      session.summary = { ...session.summary, lastActiveAt: Date.now() };
+      // A new message brings an archived chat back to the list.
+      session.summary = { ...session.summary, lastActiveAt: Date.now(), archived: false };
       summaryChanged = true;
       if (session.summary.title === 'New session') {
         session.summary = { ...session.summary, title: makeTitle(event.text) || 'New session' };
@@ -861,9 +918,48 @@ export class SessionManager {
     ipcMain.handle(IpcChannel.DeleteSession, (event, sessionId: unknown) =>
       this.delete(BrowserWindow.fromWebContents(event.sender), this.require(sessionId)),
     );
+    ipcMain.handle(
+      IpcChannel.SetSessionArchived,
+      (_event, sessionId: unknown, archived: unknown) => {
+        if (typeof archived !== 'boolean') throw new Error('Invalid value');
+        this.setArchived(this.require(sessionId), archived);
+      },
+    );
+    ipcMain.handle(IpcChannel.ShowSessionMenu, (event, sessionId: unknown, options: unknown) =>
+      this.showSessionMenu(
+        BrowserWindow.fromWebContents(event.sender),
+        this.require(sessionId),
+        options,
+      ),
+    );
     ipcMain.handle(IpcChannel.OpenSessionIn, (_event, sessionId: unknown, target: unknown) => {
       if (target !== 'antigravity' && target !== 'explorer') throw new Error('Invalid target');
       return this.openIn(this.require(sessionId), target);
     });
   }
+}
+
+/**
+ * Shows a native context menu at the pointer and resolves with the chosen item's id, or null
+ * when the menu closes without a choice. `null` entries are separators.
+ */
+function popupMenu<T extends string>(
+  window: BrowserWindow | null,
+  items: ({ id: T; label: string } | null)[],
+): Promise<T | null> {
+  return new Promise((resolve) => {
+    const menu = Menu.buildFromTemplate(
+      items.map((item) =>
+        item === null
+          ? { type: 'separator' as const }
+          : { label: item.label, click: () => resolve(item.id) },
+      ),
+    );
+    // On some platforms the close callback fires before the click handler, so closing resolves
+    // with null only after the click had a chance to run; a promise settles once.
+    menu.popup({
+      ...(window ? { window } : {}),
+      callback: () => setTimeout(() => resolve(null), 50),
+    });
+  });
 }

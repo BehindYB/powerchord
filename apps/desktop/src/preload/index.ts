@@ -40,6 +40,10 @@ const api: PowerChordApi = {
   answerQuestion: (sessionId, requestId, answers) =>
     ipcRenderer.invoke(IpcChannel.AnswerQuestion, sessionId, requestId, answers),
   deleteSession: (sessionId) => ipcRenderer.invoke(IpcChannel.DeleteSession, sessionId),
+  setSessionArchived: (sessionId, archived) =>
+    ipcRenderer.invoke(IpcChannel.SetSessionArchived, sessionId, archived),
+  showSessionMenu: (sessionId, options) =>
+    ipcRenderer.invoke(IpcChannel.ShowSessionMenu, sessionId, options),
   openSessionIn: (sessionId, target) =>
     ipcRenderer.invoke(IpcChannel.OpenSessionIn, sessionId, target),
   onSessionEvent: (listener) => subscribe<SessionEventMessage>(IpcChannel.SessionEvent, listener),
@@ -51,6 +55,7 @@ const api: PowerChordApi = {
   renameProject: (projectId, name) => ipcRenderer.invoke(IpcChannel.RenameProject, projectId, name),
   removeProject: (projectId) => ipcRenderer.invoke(IpcChannel.RemoveProject, projectId),
   openProjectFolder: (projectId) => ipcRenderer.invoke(IpcChannel.OpenProjectFolder, projectId),
+  showProjectMenu: (projectId) => ipcRenderer.invoke(IpcChannel.ShowProjectMenu, projectId),
   onProjectsChanged: (listener) =>
     subscribe<ProjectSummary[]>(IpcChannel.ProjectsChanged, listener),
   getProjectContext: (projectId) => ipcRenderer.invoke(IpcChannel.GetProjectContext, projectId),
